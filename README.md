@@ -173,6 +173,11 @@ display and for the optional Taylor-rule autopilot. It is not a forecasting mode
   to another bank's term deposit nets out at the aggregate level and is not modelled as flight.
   Flight is capped at 20% of the term stock per month to keep the simulation stable.
 - Cheap funding is booked as a central bank liability (`bankFlpBorrowing`), not as wholesale funding.
+- The banks' own bonds are a separate liability (`bankBondsIssued`, opening NZ$60bn), not folded into
+  wholesale funding. The two instruments are asymmetric, and the model treats them so: a bank *holds*
+  government bonds and sells from its book, but it *issues* its own bonds. Buying a bank bond from a
+  bank therefore creates a new liability; buying one from a non-bank leaves it in place and gives the
+  seller a deposit. Only the non-bank share creates money.
   Before the residual existed, facility draws were added to `bankDebt` and then charged at both the
   wholesale rate *and* the OCR — a double count the residual exposed and removed.
 - The private-sector column aggregates households, firms and offshore holders of New Zealand bank

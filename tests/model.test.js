@@ -132,10 +132,20 @@ for (const scenario of SCENARIOS) {
         r.loansConsumer +
         r.bankOtherAssets;
       const liabilities =
-        r.depositsTotal + r.bankDebt + r.bankFlpBorrowing + r.bankAdvances + r.bankEquity;
+        r.depositsTotal +
+        r.bankDebt +
+        r.bankBondsIssued +
+        r.bankFlpBorrowing +
+        r.bankAdvances +
+        r.bankEquity;
       assert.ok(close(assets, liabilities, 1e-6), `month ${r.month}: bank book does not balance`);
       const residual =
-        assets - r.depositsTotal - r.bankEquity - r.bankAdvances - r.bankFlpBorrowing;
+        assets -
+        r.depositsTotal -
+        r.bankEquity -
+        r.bankAdvances -
+        r.bankFlpBorrowing -
+        r.bankBondsIssued;
       assert.ok(
         close(r.bankDebt, residual, 1e-6),
         `month ${r.month}: bankDebt ${r.bankDebt} is not the residual ${residual}`,
@@ -325,7 +335,7 @@ test('cheap funding is a central bank liability, not wholesale funding', () => {
   const last = history.at(-1);
   assert.ok(last.bankFlpBorrowing > 0, 'covid preset should draw on the funding facility');
   assert.ok(
-    Math.abs(last.bankDebt - 177) < 1e-9,
+    Math.abs(last.bankDebt - 117) < 1e-9,
     'drawing the facility must not be booked as wholesale funding',
   );
 });
@@ -536,4 +546,23 @@ test('squeezing the deposit margin monotonically shrinks term deposits', () => {
       `margin ${margins[i]} kept ${terms[i].toFixed(1)} vs ${terms[i - 1].toFixed(1)} at ${margins[i - 1]}`,
     );
   }
+});
+
+test('buying a bank bond from a bank creates a liability, not a securities sale', () => {
+  // Regression: the central bank "buying bank bonds" used to drain the banks'
+  // government securities, which are a different instrument entirely.
+  const { history } = run(SCENARIOS.find((s) => s.id === 'bank-bonds').config);
+  const first = history[0];
+  const last = history.at(-1);
+  const nonBankShare = SCENARIOS.find((s) => s.id === 'bank-bonds').config.bankBondPurchases.nonBankShare;
+  const bought = last.rbnzBankBonds - first.rbnzBankBonds;
+
+  assert.ok(close(last.bankSecurities, first.bankSecurities, 1e-6), 'government securities must not move');
+  assert.ok(
+    close(last.bankBondsIssued - first.bankBondsIssued, bought * (1 - nonBankShare), 1e-6),
+    'the banking sector must issue the bonds it sells to the central bank',
+  );
+  // The non-bank share is what actually creates deposits.
+  const fromNonBanks = history.reduce((a, r) => a + r.dQeNonBank, 0);
+  assert.ok(close(fromNonBanks, bought * nonBankShare, 1e-6));
 });

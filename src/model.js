@@ -42,7 +42,8 @@ export const INITIAL = {
   depTransaction: 150,
   depSavings: 100,
   depTerm: 100,
-  bankDebt: 177, // wholesale / offshore funding — recomputed monthly as the residual
+  bankDebt: 117, // wholesale / offshore funding — recomputed monthly as the residual
+  bankBondsIssued: 60, // the banks' own bonds outstanding (liability, not a holding)
   bankFlpBorrowing: 0, // borrowing under the cheap funding facility (owed to the central bank)
   bankEquity: 40,
 
@@ -228,7 +229,14 @@ export function bankAssets(s) {
 }
 
 export function bankLiabilities(s) {
-  return depositsTotal(s) + s.bankDebt + s.bankFlpBorrowing + s.bankAdvances + s.bankEquity;
+  return (
+    depositsTotal(s) +
+    s.bankDebt +
+    s.bankBondsIssued +
+    s.bankFlpBorrowing +
+    s.bankAdvances +
+    s.bankEquity
+  );
 }
 
 export function rbnzAssets(s) {
@@ -405,17 +413,18 @@ function step(s, cfg, month, prev) {
   const qeBankBonds = clamp(bankBondNet, -s.rbnzBankBonds, bankBondBuy);
   const qeTotal = qeGovt + qeBankBonds;
 
-  // Who sold? Only a sale by a non-bank turns into a deposit one-for-one.
-  // The banking sector can only sell what it actually holds, so very large
-  // programmes mechanically have to source bonds from non-banks.
-  const bankSellCapacity = Math.max(0, s.bankSecurities - securitiesFloor);
-  const bankShareWanted = qeGovt * (1 - cfg.govtPurchases.nonBankShare) + qeBankBonds * (1 - cfg.bankBondPurchases.nonBankShare);
-  const bankShareUsed = Math.min(bankShareWanted, bankSellCapacity);
-  const effectiveBankShare = qeTotal !== 0 ? bankShareUsed / qeTotal : 0;
-  const dQeNonBank = qeTotal * (1 - effectiveBankShare);
-  // The remainder is bought off the banking sector's own book: reserves up,
-  // securities down, and no deposits are created.
-  const dSecuritiesSold = -bankShareUsed;
+  // Who sold decides whether a deposit exists. The two instruments are not
+  // symmetric: a bank *holds* government bonds and can sell from its book, but it
+  // *issues* its own bonds — so buying one from a bank creates a new liability
+  // rather than depleting a holding. Either way no deposit is created.
+  const bankGovtSold = Math.min(
+    qeGovt * (1 - cfg.govtPurchases.nonBankShare),
+    Math.max(0, s.bankSecurities - securitiesFloor),
+  );
+  const bankBondsPlaced = qeBankBonds * (1 - cfg.bankBondPurchases.nonBankShare);
+  const bankShareUsed = bankGovtSold + bankBondsPlaced;
+  const dQeNonBank = qeTotal - bankShareUsed;
+  const dSecuritiesSold = -bankGovtSold;
 
   /* -- 6. Funding for Lending -------------------------------------- */
   const flpPace = cfg.flp.months > 0 ? cfg.flp.total / cfg.flp.months : 0;
@@ -440,7 +449,7 @@ function step(s, cfg, month, prev) {
   const interestCost =
     (s.depTerm * termRate +
       (s.depSavings + s.depTransaction) * onCallRate +
-      s.bankDebt * wholesale +
+      (s.bankDebt + s.bankBondsIssued) * wholesale +
       s.rbnzFlp * s.ocr) /
     100 /
     12;
@@ -514,6 +523,7 @@ function step(s, cfg, month, prev) {
   s.rbnzGovtBonds += qeGovt;
   s.rbnzBankBonds += qeBankBonds;
   s.bankSecurities += dSecuritiesSold;
+  s.bankBondsIssued += bankBondsPlaced;
   s.rbnzFlp += flpDraw;
   s.bankFlpBorrowing += flpDraw;
   s.rbnzFxReserves += dCurrency; // note issuance backed by foreign assets
@@ -534,7 +544,12 @@ function step(s, cfg, month, prev) {
   // Wholesale funding is whatever the deposit base and equity do not cover:
   // it is the marginal funding source, not a fixed constant.
   s.bankDebt =
-    bankAssets(s) - depositsTotal(s) - s.bankEquity - s.bankAdvances - s.bankFlpBorrowing;
+    bankAssets(s) -
+    depositsTotal(s) -
+    s.bankEquity -
+    s.bankAdvances -
+    s.bankFlpBorrowing -
+    s.bankBondsIssued;
 
   // Settlement cash cannot go negative. In a system with no reserve
   // requirement the central bank stands ready to lend reserves against
@@ -610,6 +625,7 @@ function step(s, cfg, month, prev) {
     bankEquity: s.bankEquity,
     bankDebt: s.bankDebt,
     bankFlpBorrowing: s.bankFlpBorrowing,
+    bankBondsIssued: s.bankBondsIssued,
     bankAdvances: s.bankAdvances,
     bankOtherAssets: s.bankOtherAssets,
     bankSecurities: s.bankSecurities,
@@ -689,6 +705,7 @@ export function run(config = {}, monthsOverride) {
       bankEquity: s.bankEquity,
       bankDebt: s.bankDebt,
       bankFlpBorrowing: s.bankFlpBorrowing,
+      bankBondsIssued: s.bankBondsIssued,
       bankAdvances: s.bankAdvances,
       bankOtherAssets: s.bankOtherAssets,
       bankSecurities: s.bankSecurities,
@@ -724,7 +741,7 @@ export function run(config = {}, monthsOverride) {
 export function balanceSheets(s) {
   const govtBondsHeldByBanks = s.bankSecurities;
   const govtBondsHeldByNonBanks = Math.max(0, s.crownDebt - s.rbnzGovtBonds - govtBondsHeldByBanks);
-  const bankBondsHeldByNonBanks = Math.max(0, s.bankDebt - s.rbnzBankBonds);
+  const bankBondsHeldByNonBanks = Math.max(0, s.bankBondsIssued - s.rbnzBankBonds);
 
   const privateAssets =
     s.currency + depositsTotal(s) + govtBondsHeldByNonBanks + bankBondsHeldByNonBanks;
@@ -761,6 +778,7 @@ export function balanceSheets(s) {
         { label: 'Savings deposits', value: s.depSavings },
         { label: 'Term deposits', value: s.depTerm },
         { label: 'Wholesale funding', value: s.bankDebt },
+        { label: 'Bank bonds issued', value: s.bankBondsIssued },
         { label: 'Central bank funding', value: s.bankFlpBorrowing },
         { label: 'Equity', value: s.bankEquity },
       ],
