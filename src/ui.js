@@ -328,7 +328,25 @@ const times = (v) => `${v.toFixed(1)}×`;
 const flow = (v) => (Math.abs(v) < 0.005 ? '0.0' : signed(v));
 const kindOf = (v) => (Math.abs(v) < 0.005 ? 'nil' : v > 0 ? 'add' : 'sub');
 
-const METRICS = [
+/**
+ * The M2 identity, split into the flows that make it up. Shared by the KPI panel
+ * and the waterfall so the two cannot disagree.
+ *
+ * Flight appears in dTermShift already (term deposits that left were booked as a
+ * fall in the term stock), but those balances were never M2 and their departure
+ * leaves M2 untouched — so the term row is built from the two together, which
+ * cancels it: dM2 = credit + QE − retained − (dTermShift + flight).
+ */
+export function decomposeM2(history) {
+  const sum = (key) => history.reduce((a, r) => a + (r[key] ?? 0), 0);
+  const credit = sum('dCredit');
+  const qe = sum('dQeNonBank');
+  const retained = -sum('dRetained');
+  const term = -(sum('dTermShift') + sum('dFlight'));
+  return { credit, qe, retained, term, total: credit + qe + retained + term };
+}
+
+export const METRICS = [
   {
     key: 'm2',
     label: 'M2',
@@ -336,10 +354,7 @@ const METRICS = [
     sub: (c) => `${growthPct(c.last.m2, c.prevYear.m2).toFixed(1)}% over the past year`,
     compare: (c) => (c.cmp ? `vs NZ$${bn(c.cmp.m2)}bn in comparison` : ''),
     detail: (c) => {
-      const credit = c.sum('dCredit');
-      const qe = c.sum('dQeNonBank');
-      const retained = -c.sum('dRetained');
-      const term = -c.sum('dTermShift');
+      const { credit, qe, retained, term } = decomposeM2(c.h);
       const total = c.last.m2 - c.start.m2;
       const share = Math.abs(total) > 0.5 ? (Math.abs(qe) / Math.abs(total)) * 100 : 0;
       return {
@@ -383,10 +398,15 @@ const METRICS = [
           },
         ],
         total: { label: 'Change in M2', value: flow(total) },
-        reading:
-          qe > 0.5
-            ? `Of the NZ$${total.toFixed(1)}bn created over ${c.months} months, NZ$${credit.toFixed(1)}bn came from lending and NZ$${qe.toFixed(1)}bn from the purchase programme — about ${share.toFixed(0)}% of the total. Lending remains the dominant source even during a large asset purchase programme.`
-            : `With no asset purchases in this run, M2 moved with bank lending and deposit behaviour alone.`,
+        reading: (() => {
+          if (qe > 0.5) {
+            return `Of the NZ$${total.toFixed(1)}bn created over ${c.months} months, NZ$${credit.toFixed(1)}bn came from lending and NZ$${qe.toFixed(1)}bn from the purchase programme — about ${share.toFixed(0)}% of the total. Lending remains the dominant source even during a large asset purchase programme.`;
+          }
+          if (qe < -0.5) {
+            return `The central bank sold bonds back over these ${c.months} months, which destroyed NZ$${Math.abs(qe).toFixed(1)}bn of deposits. Lending ${credit >= 0 ? 'added' : 'removed'} NZ$${Math.abs(credit).toFixed(1)}bn, leaving M2 NZ$${Math.abs(total).toFixed(1)}bn ${total >= 0 ? 'higher' : 'lower'}.`;
+          }
+          return 'With no bond operations in this run, M2 moved with bank lending and deposit behaviour alone.';
+        })(),
       };
     },
   },
@@ -485,7 +505,19 @@ const METRICS = [
           },
         ],
         total: { label: 'Change in base', value: flow(total) },
-        reading: `The base is set by the central bank's own operations, not by how much banks want to lend. This run bought NZ$${purchases.toFixed(1)}bn of assets and the base rose by exactly that amount.`,
+        reading: (() => {
+          const head = "The base is set by the central bank's own operations, not by how much banks want to lend.";
+          const sources = [];
+          if (Math.abs(purchases) > 0.05) sources.push(`NZ$${purchases.toFixed(1)}bn of net asset purchases`);
+          if (Math.abs(flp) > 0.05) sources.push(`NZ$${flp.toFixed(1)}bn drawn under the funding facility`);
+          if (Math.abs(advances) > 0.05) sources.push(`NZ$${advances.toFixed(1)}bn of standing-facility advances`);
+          if (!sources.length) {
+            return `${head} There were no central bank operations in this window, so the base did not move.`;
+          }
+          const joined =
+            sources.length === 1 ? sources[0] : `${sources.slice(0, -1).join(', ')} and ${sources.at(-1)}`;
+          return `${head} The ${total >= 0 ? 'rise' : 'fall'} of NZ$${Math.abs(total).toFixed(1)}bn came from ${joined}.`;
+        })(),
       };
     },
   },
@@ -915,11 +947,10 @@ function renderCharts() {
 function renderWaterfall() {
   const history = runs.primary.history;
   const sum = (key) => history.reduce((a, r) => a + (r[key] ?? 0), 0);
-  const credit = sum('dCredit');
-  const qe = sum('dQeNonBank');
-  const retained = -sum('dRetained');
-  const term = -sum('dTermShift');
-  const total = credit + qe + retained + term;
+  const { credit, qe, retained, term } = decomposeM2(history);
+  // The bar is the money stock itself, not the sum of the rows: if a flow were
+  // ever left out of the decomposition the gap would show rather than hide.
+  const total = history.at(-1).m2 - history[0].m2;
 
   const totalQe = sum('qeGovt') + sum('qeBankBonds');
 
