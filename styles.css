@@ -6,8 +6,8 @@
   --card: #ffffff;
   --ink: #0d2420;
   --ink-2: #2f423d;
-  --muted: #5b6b66;
-  --faint: #93a29d;
+  --muted: #4d5c57;
+  --faint: #6b7873;
   --line: #e4e1d9;
   --line-soft: #f0eee8;
   --accent: #0f766e;
@@ -25,6 +25,11 @@
 
 * {
   box-sizing: border-box;
+}
+
+:where(a, button, summary, select, input, [tabindex]):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 html {
