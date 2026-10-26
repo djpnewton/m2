@@ -116,7 +116,7 @@ function renderControls() {
 
     <details class="panel-block">
       <summary><h2>Fiscal and credit conditions</h2></summary>
-      ${control({ label: 'Government deficit', path: 'fiscal.deficitPctGdp', min: 0, max: 10, step: 0.5, value: c.fiscal.deficitPctGdp, format: (v) => `${v.toFixed(1)}% of GDP`, hint: 'A deficit financed by selling bonds to the public creates no deposits. Only the part the central bank buys does.' })}
+      ${control({ label: 'Government deficit', path: 'fiscal.deficitPctGdp', min: 0, max: 10, step: 0.5, value: c.fiscal.deficitPctGdp, format: (v) => `${v.toFixed(1)}% of GDP`, hint: `Bonds sold to the public swap a deposit for a bond, so the financing itself creates no deposit. Above the ${PARAMS.fiscalBaseline.toFixed(0)}%-of-GDP baseline the deficit also lifts demand, and the borrowing that follows does create deposits.` })}
       ${control({ label: 'Confidence / credit demand', path: 'credit.confidence', min: 0.2, max: 1.6, step: 0.05, value: c.credit.confidence, format: (v) => `${Math.round(v * 100)}%` })}
       ${control({ label: 'Macroprudential tightness (LVR/DTI)', path: 'credit.lvrTightness', min: 0, max: 1, step: 0.05, value: c.credit.lvrTightness, format: (v) => (v === 0 ? 'off' : `${Math.round(v * 100)}%`), hint: `Restrictions on high-${defineTerm('lvr', 'LVR')} or high-${defineTerm('dti', 'DTI')} lending. These slow credit without moving the policy rate.` })}
       ${control({ label: 'Bank capital requirement', path: 'credit.capitalTarget', min: 0.1, max: 0.3, step: 0.005, value: c.credit.capitalTarget ?? PARAMS.capitalTarget, format: (v) => `${(v * 100).toFixed(1)}%`, hint: `Equity against ${defineTerm('risk-weighted-capital', 'risk-weighted assets')}. This is the binding constraint on lending.` })}
@@ -1030,6 +1030,25 @@ function renderAccountsPanel() {
  * The prose quotes two figures that come from the model. Keep them in step rather
  * than restating them in HTML.
  */
+/**
+ * How much of the current run's M2 traces to the deficit, measured against the
+ * same settings with the deficit back at baseline. Bond sales swap deposits for
+ * bonds, so whatever shows up here arrives through the credit demand the deficit
+ * adds, not through the financing.
+ */
+function fiscalCreditText() {
+  if (Math.abs(state.config.fiscal.deficitPctGdp - PARAMS.fiscalBaseline) < 1e-9) return '0.0';
+  const counterfactual = run({
+    ...state.config,
+    fiscal: { ...state.config.fiscal, deficitPctGdp: PARAMS.fiscalBaseline },
+  }).history;
+  const history = runs.primary.history;
+  const diff = history.at(-1).m2 - counterfactual.at(-1).m2;
+  const magnitude = Math.abs(diff).toFixed(1);
+  if (magnitude === '0.0') return '0.0';
+  return diff < 0 ? `−${magnitude}` : `+${magnitude}`;
+}
+
 function syncProseFigures() {
   const opening = runs.primary.history[0];
   const set = (id, text) => {
@@ -1040,6 +1059,8 @@ function syncProseFigures() {
   set('prose-convenience', PARAMS.depositConvenience.toFixed(1));
   set('prose-wholesale', wholesale);
   set('hint-wholesale', wholesale);
+  set('prose-fiscal-baseline', PARAMS.fiscalBaseline.toFixed(0));
+  set('prose-fiscal-credit', fiscalCreditText());
 }
 
 function render() {

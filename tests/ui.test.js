@@ -79,6 +79,10 @@ test('the deposit margin copy does not restate model figures', () => {
 test('the page prose fills its figures at runtime', () => {
   assert.match(html, /id="prose-convenience"/);
   assert.match(html, /id="prose-wholesale"/);
+  assert.match(html, /id="prose-fiscal-baseline"/);
+  assert.match(html, /id="prose-fiscal-credit"/);
+  assert.match(source, /set\('prose-fiscal-baseline'/);
+  assert.match(source, /set\('prose-fiscal-credit'/);
 
   // Each placeholder carries a no-JS fallback; the model overwrites it on load.
   // What must not happen is a stray hard-coded rate anywhere else in the prose.
@@ -87,6 +91,10 @@ test('the page prose fills its figures at runtime', () => {
     .replace(/<span id="prose-convenience">[^<]*<\/span>/g, '');
   assert.ok(!withoutPlaceholders.includes('3.27'), 'stray hard-coded wholesale rate');
   assert.ok(!/roughly\s+0\.7\s+percentage/.test(withoutPlaceholders), 'stray hard-coded threshold');
+  assert.ok(
+    !html.includes('A deficit alone creates no money'),
+    'the prose must not claim a deficit creates no money - it reaches M2 through credit',
+  );
 });
 
 test('the inflation target and money-growth reference live in PARAMS', () => {

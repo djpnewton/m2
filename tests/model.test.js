@@ -250,10 +250,56 @@ test('who sells the bonds matters: non-bank sellers create more money', () => {
   );
 });
 
-test('a deficit financed by the public creates no deposits directly', () => {
+test('a deficit financed by the public creates no deposits in the month it is issued', () => {
   const low = run({ months: 1, fiscal: { deficitPctGdp: 0 } }).history.at(-1);
   const high = run({ months: 1, fiscal: { deficitPctGdp: 10 } }).history.at(-1);
-  assert.ok(close(high.dM2, low.dM2, 1e-9), 'fiscal deficits should not move M2 without monetisation');
+  assert.ok(close(high.dM2, low.dM2, 1e-9), 'the financing leg should not move M2');
+});
+
+test('a deficit above baseline reaches M2 through credit, not deposit creation', () => {
+  const sum = (history, key) => history.reduce((a, r) => a + r[key], 0);
+  const low = run({ months: 60, fiscal: { deficitPctGdp: PARAMS.fiscalBaseline } }).history;
+  const high = run({ months: 60, fiscal: { deficitPctGdp: 8 } }).history;
+  assert.ok(high.at(-1).m2 > low.at(-1).m2, 'a larger deficit should leave M2 higher');
+  assert.ok(
+    close(sum(high, 'dQeNonBank'), sum(low, 'dQeNonBank'), 1e-9),
+    'with no purchases the direct deposit channel must be identical',
+  );
+  assert.ok(
+    sum(high, 'dCredit') > sum(low, 'dCredit'),
+    'the difference has to arrive as bank credit',
+  );
+  assert.ok(
+    sum(high, 'dCredit') - sum(low, 'dCredit') > high.at(-1).m2 - low.at(-1).m2,
+    'and it should be large enough to account for the whole M2 gap',
+  );
+});
+
+test('the fiscal impulse is measured from the baseline deficit, not from zero', () => {
+  assert.equal(
+    DEFAULT_CONFIG.fiscal.deficitPctGdp,
+    PARAMS.fiscalBaseline,
+    'the default deficit and the baseline must agree',
+  );
+  const at = (deficitPctGdp) => run({ months: 1, fiscal: { deficitPctGdp } }).history.at(-1);
+  const atBaseline = at(PARAMS.fiscalBaseline);
+
+  // Rebuild the month-one gap from the stance alone; a deficit sitting exactly on
+  // the baseline must contribute nothing. Subtracting zero instead of the baseline
+  // would show up here as an extra 0.15 * 0.4 * baseline.
+  const qeStock = atBaseline.rbnzGovtBonds + atBaseline.rbnzBankBonds;
+  const compression = Math.min(PARAMS.qeTermCompressionMax, (qeStock / 100) * PARAMS.qeTermCompressionMax);
+  const stance = PARAMS.neutralRealRate + PARAMS.inflationTarget - (atBaseline.ocr - compression * 0.5);
+  assert.ok(
+    close(atBaseline.outputGap, PARAMS.outputGapStancePass * stance, 1e-12),
+    `baseline deficit should add no gap, got ${atBaseline.outputGap}`,
+  );
+
+  const above = at(PARAMS.fiscalBaseline + 4);
+  assert.ok(
+    close(above.outputGap - atBaseline.outputGap, PARAMS.outputGapStancePass * 0.4 * 4, 1e-12),
+    'the gap should rise one-for-one with the deficit measured above baseline',
+  );
 });
 
 test('term-deposit shifts move M2 but not M3', () => {

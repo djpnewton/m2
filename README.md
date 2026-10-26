@@ -46,14 +46,19 @@ Three consequences are visible in the app and are the point of building it:
 2. **Who sells the bond decides whether money is created.** Sell to a pension fund: the fund receives
    a deposit and M2 rises. Sell from a bank's own book: the bank swaps one asset for another and no
    deposit exists.
-3. **A fiscal deficit on its own creates no money.** Tax receipts cover ordinary spending; only the
-   shortfall — the deficit — has to be financed by issuing bonds. Selling those bonds to the public
-   creates no deposits, so the money stock rises only to the extent the central bank buys them.
+3. **A fiscal deficit creates no deposits directly, though it does change how much is borrowed.**
+   Tax receipts cover ordinary spending; only the shortfall — the deficit — has to be financed by
+   issuing bonds. Selling those bonds to the public swaps deposits for bonds rather than creating any,
+   so on the financing leg the money stock rises only to the extent the central bank buys them. The
+   model then adds a slower second link: a deficit above its 1%-of-GDP baseline lifts demand, firms
+   and households borrow against that demand, and bank lending creates deposits one-for-one. An
+   8%-of-GDP deficit with no bond purchases ends five years about NZ$12bn higher on M2, and every
+   dollar of it arrives through credit — the budget line itself creates nothing.
 4. **Deposits do not fund lending.** Lending creates the deposit that funds it, so a shift into term
    deposits does not release lendable funds.
 5. **But deposit pricing is a real decision with a real floor.** The bank can shave its term deposit
    rate below market to save interest — until savers leave. Past roughly 0.7pp of under-pricing,
-   balances move to non-bank assets, and the bank replaces them with wholesale borrowing at 3.27%.
+   balances move to non-bank assets, and the bank replaces them with wholesale borrowing at 3.81%.
    Profits therefore peak exactly at that threshold: squeeze until balances start to leave, then
    stop. This is the only place where the funding mix is determined, and it is behavioural, not
    accounting — which is why the residual wholesale line alone could never explain it.

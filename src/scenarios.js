@@ -5,6 +5,8 @@
  * Months are 0-indexed; all monetary values are NZ$ billions.
  */
 
+import { PARAMS } from './model.js';
+
 /** Total central bank purchases a preset implies, in NZ$bn. */
 const purchaseTotal = (c) =>
   c.govtPurchases.pace * c.govtPurchases.months + c.bankBondPurchases.pace * c.bankBondPurchases.months;
@@ -14,7 +16,7 @@ const money = (v) => (Number.isInteger(v) ? `NZ$${v}bn` : `~NZ$${Math.round(v)}b
 const base = {
   months: 60,
   autopilot: false,
-  fiscal: { deficitPctGdp: 1.0 },
+  fiscal: { deficitPctGdp: PARAMS.fiscalBaseline },
   credit: { confidence: 1.0, lvrTightness: 0, capitalTarget: null },
   households: { termPreference: 0 },
 };

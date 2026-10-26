@@ -129,6 +129,10 @@ export const PARAMS = {
   inflationTarget: 2.0, // the midpoint the Reserve Bank targets
   moneyGrowthReference: 4.0, // money growth that adds nothing to inflation
 
+  // The deficit treated as structurally normal. Only the part above this line is
+  // demand stimulus, so a deficit at or below it leaves the output gap alone.
+  fiscalBaseline: 1.0,
+
   taylorInflationWeight: 0.5,
   taylorGapWeight: 0.5,
 };
@@ -150,7 +154,7 @@ export const DEFAULT_CONFIG = {
   // Funding-for-Lending style cheap funding facility, total NZ$bn.
   flp: { total: 0, months: 0, startMonth: 0 },
 
-  fiscal: { deficitPctGdp: 1.0 },
+  fiscal: { deficitPctGdp: PARAMS.fiscalBaseline },
   credit: { confidence: 1.0, lvrTightness: 0, capitalTarget: null },
   households: { termPreference: 0 },
   deposits: { margin: 0.5 },
@@ -571,7 +575,7 @@ function step(s, cfg, month, prev) {
   const neutralNominal = P.neutralRealRate + P.inflationTarget;
   const effectiveRate = s.ocr - qeCompression * 0.5;
   const rateStance = neutralNominal - effectiveRate;
-  const fiscalImpulse = cfg.fiscal.deficitPctGdp - 1.0;
+  const fiscalImpulse = cfg.fiscal.deficitPctGdp - P.fiscalBaseline;
   s.outputGap = clamp(
     P.outputGapPersistence * s.outputGap +
       P.outputGapStancePass * (rateStance + fiscalImpulse * 0.4),
