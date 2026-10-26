@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en-NZ">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>How interest rates and bond purchases become M2 — a balance-sheet model</title>
+    <meta
+      name="description"
+      content="An interactive balance-sheet model of money creation: how central bank policy rates and purchases of government and bank bonds feed into M2."
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="masthead">
+      <div class="wrap">
+        <p class="eyebrow">Monetary mechanics · modelled on the Reserve Bank of New Zealand</p>
+        <h1>How interest rates and bond purchases become M2</h1>
+        <p class="lede">
+          Money is created when banks lend and when a central bank buys assets from someone other than a
+          bank. This page is a working balance-sheet model of that plumbing. Move the levers and watch what
+          happens to the money stock, the monetary base, and the multiplier that connects them.
+        </p>
+      </div>
+    </header>
+
+    <main class="wrap layout">
+      <aside class="panel" id="controls" aria-label="Model controls"></aside>
+
+      <div class="output">
+        <section class="kpi-strip" id="kpis" aria-label="Key results"></section>
+        <p class="compare-note" id="kpi-compare-note"></p>
+        <div class="kpi-detail" id="kpi-detail" hidden></div>
+
+        <section class="card insight-card">
+          <h2>What is driving the money stock here</h2>
+          <p id="insight" class="insight"></p>
+        </section>
+
+        <section class="card">
+          <header class="card-head">
+            <h3>Money stock</h3>
+            <p>M2 is currency plus transaction and on-call savings deposits. M3 adds term deposits.</p>
+          </header>
+          <div id="chart-m2"></div>
+        </section>
+
+        <div class="pair">
+          <section class="card">
+            <header class="card-head">
+              <h3>The base, not the money</h3>
+              <p><button type="button" class="term" data-term="settlement-cash" aria-expanded="false">Settlement cash</button> is what the central bank pays with. It is not what banks lend.</p>
+            </header>
+            <div id="chart-base"></div>
+          </section>
+          <section class="card">
+            <header class="card-head">
+              <h3>Money multiplier</h3>
+              <p>M2 per dollar of base — the <button type="button" class="term" data-term="money-multiplier" aria-expanded="false">money multiplier</button>. It collapses when reserves surge.</p>
+            </header>
+            <div id="chart-mult"></div>
+          </section>
+        </div>
+
+        <section class="card">
+          <header class="card-head">
+            <h3>What actually moved M2</h3>
+            <p>
+              Decomposition of every dollar of M2 created over the whole window, using the identity built
+              into the model.
+            </p>
+          </header>
+          <div id="chart-flow"></div>
+          <p class="card-note" id="flow-note"></p>
+        </section>
+
+        <div class="pair">
+          <section class="card">
+            <header class="card-head">
+              <h3>Rates</h3>
+              <p>Policy rate, the lending rate it drives, and what savers are offered.</p>
+            </header>
+            <div id="chart-rates"></div>
+          </section>
+          <section class="card">
+            <header class="card-head">
+              <h3>Growth rates</h3>
+              <p>Twelve-month growth in the money stock and in bank credit.</p>
+            </header>
+            <div id="chart-growth"></div>
+          </section>
+        </div>
+
+        <section class="card">
+          <header class="card-head">
+            <h3>Central bank balance sheet</h3>
+            <p>The asset side of asset purchases. Every dollar bought shows up here.</p>
+          </header>
+          <div id="chart-rbnz"></div>
+        </section>
+
+        <section class="card">
+          <header class="card-head">
+            <h3>Balance sheets, side by side</h3>
+            <p>
+              The same accounting, as T-accounts. Scrub through the window to watch positions move.
+              <span class="small" id="account-month-label"></span>
+            </p>
+          </header>
+          <input
+            type="range"
+            id="account-slider"
+            class="scrub"
+            min="0"
+            max="60"
+            step="1"
+            value="60"
+            aria-label="Month to display"
+          />
+          <div id="accounts"></div>
+        </section>
+
+        <section class="card prose">
+          <h3>Assumptions worth knowing</h3>
+          <ul>
+            <li>
+              <b>There is no <button type="button" class="term" data-term="reserve-requirement" aria-expanded="false">reserve requirement</button>.</b> New Zealand abolished compulsory reserves in 1985.
+              Banks hold settlement cash to settle payments with each other, and the central bank supplies
+              whatever is needed. So reserves are an outcome of policy operations, not a constraint that
+              forces lending to multiply.
+            </li>
+            <li>
+              <b>Loans create deposits.</b> Bank lending adds to deposits one-for-one; nothing is
+              "lent out" of existing deposits. Repaying a loan destroys the deposit again.
+            </li>
+            <li>
+              <b>Who sells matters.</b> When the central bank buys a bond from a pension fund, the seller
+              ends up with a deposit and M2 rises. When it buys from a bank's own book, the bank swaps a
+              bond for settlement cash and no deposit is created.
+            </li>
+            <li>
+              <b>Term deposits do not fund loans — but banks still compete for them.</b> The intuition
+              that a bank gathers deposits and lends them out has the arrow backwards: lending creates
+              the deposit that funds it, and a term deposit is a liability the bank owes, not a pile of
+              money waiting to be deployed. Banks pay up for term deposits because the alternative is
+              dearer. Wholesale funding costs more than a term deposit, and a balance the bank fails to
+              retain has to be replaced in that market. The premium over an on-call balance buys
+              duration — funding that cannot leave tomorrow — which is why New Zealand's <button type="button" class="term" data-term="core-funding-ratio" aria-expanded="false">core funding ratio</button> counts longer-dated retail deposits as core funding and requires a minimum share of
+              lending to be funded that way. The <em>deposit margin</em> control is where this bites:
+              the bank can shave its term deposit rate below market to save interest, but past roughly
+              <span id="prose-convenience">0.7</span> percentage points savers move their money to non-bank
+              assets and it has to replace those balances with wholesale borrowing at
+              <span id="prose-wholesale">3.81%</span>. Push the margin up and watch M3 fall
+              while M2 barely moves — the money was never in M2, and the cost lands on the bank's
+              profits. Wholesale funding is the residual here, so it rises one-for-one with what leaves.
+            </li>
+            <li>
+              <b>A deficit alone creates no money.</b> Ordinary spending is covered by tax receipts;
+              only the shortfall — the deficit — has to be financed by issuing bonds. Selling those
+              bonds to the public creates no deposits, so the money stock rises only to the extent the
+              central bank buys them.
+            </li>
+            <li>
+              <b>M2 here is this model's definition</b> — currency plus transaction and on-call savings
+              deposits. The Reserve Bank publishes several aggregates and its own M3 is broader, adding term
+              deposits and funding from non-residents. Levels and growth rates will not match published
+              statistics exactly, and are not meant to.
+            </li>
+            <li>
+              <b>Numbers are illustrative.</b> The opening balance sheet is calibrated to the shape and
+              scale of the New Zealand system around 2019, with every internal identity balancing exactly.
+              The behavioural parameters are judgement calls, not estimates.
+            </li>
+          </ul>
+        </section>
+      </div>
+    </main>
+
+    <footer class="wrap footnote">
+      <p>
+        A teaching model, not a forecast. All figures are NZ$ billions unless stated. The model solves no
+        optimisation problem and has no expectations beyond a simple backward-looking anchor — it exists to
+        make the accounting visible.
+      </p>
+    </footer>
+
+    <script type="module" src="src/main.js"></script>
+  </body>
+</html>
