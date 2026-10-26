@@ -8,6 +8,10 @@
       name="description"
       content="An interactive balance-sheet model of money creation: how central bank policy rates and purchases of government and bank bonds feed into M2."
     />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2032%2032'%3E%3Crect%20width='32'%20height='32'%20rx='7'%20fill='%230f766e'/%3E%3Ctext%20x='16'%20y='22'%20font-family='Georgia,serif'%20font-size='14'%20fill='%23fff'%20text-anchor='middle'%3EM2%3C/text%3E%3C/svg%3E"
+    />
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
@@ -29,7 +33,7 @@
       <div class="output">
         <section class="kpi-strip" id="kpis" aria-label="Key results"></section>
         <p class="compare-note" id="kpi-compare-note"></p>
-        <div class="kpi-detail" id="kpi-detail" hidden></div>
+        <div class="kpi-detail" id="kpi-detail" role="region" aria-label="Metric breakdown" hidden></div>
 
         <section class="card insight-card">
           <h2>What is driving the money stock here</h2>
