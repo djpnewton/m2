@@ -13,6 +13,9 @@ const RANGES = [
   { name: 'monetary base', min: 5, max: 120, count: 4 },
   { name: 'money multiplier', min: 3, max: 18, count: 4 },
   { name: 'policy rates', min: 0, max: 8, count: 4 },
+  // The real domain of the rates chart on a quiet preset: three flat lines and a
+  // narrow spread. This used to yield gridlines at 4.0 and 5.0 only.
+  { name: 'policy rates (tight spread)', min: 3.13, max: 5.41, count: 4 },
   { name: 'growth rate (negative)', min: -15, max: 25, count: 4 },
   { name: 'waterfall contributions', min: -90, max: 110, count: 4 },
   { name: 'fractional', min: 0.1, max: 0.9, count: 5 },
@@ -64,9 +67,39 @@ for (const range of RANGES) {
 
   test(`[${name}] tick count is close to the requested count`, () => {
     const ticks = niceTicks(min, max, count);
-    assert.ok(ticks.length <= count + 2, `${ticks.length} ticks for a request of ${count}`);
+    assert.ok(ticks.length <= count + 3, `${ticks.length} ticks for a request of ${count}`);
   });
 }
+
+test('no axis is left with only two gridlines', () => {
+  // Regression: the rates chart asked for 3.1-5.4 and got lines at 4.0 and 5.0,
+  // leaving the OCR and term-deposit lines floating with nothing to read them against.
+  for (const { name, min, max, count } of RANGES) {
+    const ticks = niceTicks(min, max, count);
+    assert.ok(ticks.length >= 3, `${name}: only ${ticks.length} gridlines (${JSON.stringify(ticks)})`);
+  }
+});
+
+test('one decimal keeps every gridline label distinct', () => {
+  // Why the growth and multiplier charts format with a decimal: these real domains
+  // produce fractional steps, and a whole-number format printed "14 15 15 15 15".
+  const domains = [
+    [13.4, 15.4],
+    [2.8, 3.85],
+    [1.2, 3.1],
+    [0.35, 0.65],
+  ];
+  for (const [min, max] of domains) {
+    const ticks = niceTicks(min, max, 4);
+    assert.ok(ticks.length >= 3, `[${min}, ${max}] gave only ${ticks.length} gridlines`);
+    const labels = ticks.map((t) => t.toFixed(1));
+    assert.equal(
+      new Set(labels).size,
+      labels.length,
+      `duplicate labels at [${min}, ${max}]: ${labels.join(' ')}`,
+    );
+  }
+});
 
 test('degenerate domains fall back to a single tick instead of looping', () => {
   assert.deepEqual(niceTicks(5, 5), [5]);

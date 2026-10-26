@@ -22,6 +22,8 @@ export const COLORS = {
   negative: '#b91c1c',
   total: '#0d2420',
   layers: ['#0f766e', '#38a169', '#b45309', '#7c3aed', '#0e7490', '#9aa8a3'],
+  // Loan book, by borrower. Housing is drawn first because it dominates the stack.
+  lending: ['#1d4ed8', '#7c3aed', '#0e7490'],
 };
 
 const NS = 'http://www.w3.org/2000/svg';
@@ -48,13 +50,32 @@ export function niceTicks(min, max, count = 5) {
   const raw = span / count;
   const mag = Math.pow(10, Math.floor(Math.log10(raw)));
   const norm = raw / mag;
-  const step = (norm <= 1 ? 1 : norm <= 2 ? 2 : norm <= 5 ? 5 : 10) * mag;
-  // A degenerate step would spin forever; fall back to the domain endpoints.
-  if (!(step > 0) || !Number.isFinite(step)) return [tidy(min), tidy(max)];
-  const start = Math.ceil(min / step - 1e-9) * step;
-  const ticks = [];
-  for (let v = start; v <= max + step * 1e-6; v += step) ticks.push(tidy(v));
-  return ticks;
+  const LADDER = [1, 2, 5, 10];
+  let index = LADDER.findIndex((v) => norm <= v);
+  if (index < 0) index = LADDER.length - 1;
+
+  const ticksFor = (i) => {
+    const step = LADDER[i] * mag;
+    // A degenerate step would spin forever; no ticks rather than an infinite loop.
+    if (!(step > 0) || !Number.isFinite(step)) return null;
+    const start = Math.ceil(min / step - 1e-9) * step;
+    const ticks = [];
+    for (let v = start; v <= max + step * 1e-6; v += step) ticks.push(tidy(v));
+    return ticks;
+  };
+
+  // Two gridlines leave a series floating with nothing to read it against, so step
+  // down the ladder until the axis has at least three, without crowding it. The
+  // ceiling allows a little more than the caller asked for: a step of 5 over a
+  // span of 13 is either 2 lines or 7, and 7 is the readable one.
+  let ticks = ticksFor(index);
+  while (index > 0 && (!ticks || ticks.length < 3)) {
+    const finer = ticksFor(index - 1);
+    if (finer && finer.length > count + 3) break;
+    index -= 1;
+    ticks = finer ?? ticks;
+  }
+  return ticks ?? [tidy(min), tidy(max)];
 }
 
 export function extent(series) {
@@ -143,8 +164,10 @@ export function lineChart(container, spec) {
     const xMax = Math.max(1, ...allPoints.map((p) => p[0]));
     let [yMin, yMax] = s.yDomain ?? extent(s.series);
     if (s.includeZero) yMin = Math.min(0, yMin);
+    // Leave roughly the same headroom under the lowest series as above the
+    // highest, so a flat line never sits on the axis.
     const pad = (yMax - yMin) * 0.08 || 1;
-    yMin -= pad * 0.4;
+    yMin -= pad * 0.8;
     yMax += pad;
 
     const X = (v) => margin.left + (v / xMax) * innerW;

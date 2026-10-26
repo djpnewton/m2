@@ -4,7 +4,7 @@ import fs from 'node:fs';
 
 import { mergeConfig, PARAMS, run } from '../src/model.js';
 import { SCENARIOS } from '../src/scenarios.js';
-import { decomposeM2, METRICS } from '../src/ui.js';
+import { creditMix, decomposeM2, METRICS } from '../src/ui.js';
 
 const source = fs.readFileSync(new URL('../src/ui.js', import.meta.url), 'utf8');
 const html = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
@@ -179,6 +179,23 @@ test('the M2 breakdown adds up, including when deposits flee', () => {
       Math.abs(rowSum - actual) < 0.2,
       `${name}: panel rows sum to ${rowSum.toFixed(1)}, M2 moved ${actual.toFixed(1)}`,
     );
+  }
+});
+
+test('the credit mix covers the whole loan book', () => {
+  // The stacked area is only meaningful if its three layers add up to the bank
+  // credit figure the KPI tile reports.
+  for (const scenario of SCENARIOS) {
+    const { history } = run(scenario.config);
+    const mix = creditMix(history);
+    for (const [label, point] of [['opening', mix.first], ['final', mix.last]]) {
+      const parts = point.housing + point.business + point.consumer;
+      assert.ok(
+        Math.abs(parts - point.total) < 1e-9,
+        `${scenario.id} ${label}: parts ${parts.toFixed(2)} vs total ${point.total.toFixed(2)}`,
+      );
+    }
+    assert.ok(mix.housingShare > 0 && mix.housingShare < 100, `${scenario.id}: implausible housing share`);
   }
 });
 

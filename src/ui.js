@@ -332,6 +332,29 @@ export function decomposeM2(history) {
   return { credit, qe, retained, term, total: credit + qe + retained + term };
 }
 
+/**
+ * The loan book, split by borrower, at the end of the window and at its start.
+ * The three parts sum to total bank credit, which is what makes the chart stack
+ * comparable with the bank credit tile.
+ */
+export function creditMix(history) {
+  const first = history[0];
+  const last = history.at(-1);
+  const split = (r) => ({
+    housing: r.loansHousing,
+    business: r.loansBusiness,
+    consumer: r.loansConsumer,
+    total: r.loansTotal,
+  });
+  const housingShare = (r) => (r.loansTotal > 0 ? (r.loansHousing / r.loansTotal) * 100 : 0);
+  return {
+    first: split(first),
+    last: split(last),
+    openingHousingShare: housingShare(first),
+    housingShare: housingShare(last),
+  };
+}
+
 export const METRICS = [
   {
     key: 'm2',
@@ -849,7 +872,9 @@ function renderCharts() {
 
   applyChart('mult', lineChart, 'chart-mult', {
     series: seriesFor((r) => r.multiplier, 'M2 ÷ base', COLORS.credit, { width: 2.2 }),
-    yFormat: (v) => v.toFixed(0),
+    // One decimal: the axis can step by fractions of a multiple, and rounding to
+    // whole numbers makes neighbouring gridlines print the same value.
+    yFormat: (v) => v.toFixed(1),
     xFormat: monthLabel,
     height: 210,
   });
@@ -891,13 +916,16 @@ function renderCharts() {
   }
   applyChart('growth', lineChart, 'chart-growth', {
     series: growthSeries,
-    yFormat: (v) => `${v.toFixed(0)}%`,
+    // One decimal: the axis steps by tenths of a point here, and rounding to whole
+    // percentages makes neighbouring gridlines print the same number.
+    yFormat: (v) => `${v.toFixed(1)}%`,
     xFormat: monthLabel,
     annotateZero: true,
     height: 210,
   });
 
   applyChart('rbnz', stackedArea, 'chart-rbnz', {
+    title: 'Central bank holdings, NZ$ billions',
     layers: [
       {
         name: 'Government bonds',
@@ -986,6 +1014,31 @@ function renderWaterfall() {
   el('flow-note').innerHTML = note;
 }
 
+function renderCreditMix() {
+  const history = runs.primary.history;
+  const series = (key) => history.map((r) => [r.month, r[key]]);
+
+  applyChart('creditMix', stackedArea, 'chart-credit', {
+    layers: [
+      { name: 'Mortgages', color: COLORS.lending[0], points: series('loansHousing') },
+      { name: 'Business', color: COLORS.lending[1], points: series('loansBusiness') },
+      { name: 'Consumer', color: COLORS.lending[2], points: series('loansConsumer') },
+    ],
+    yFormat: (v) => `$${v.toFixed(0)}`,
+    xFormat: (m) => `month ${m}`,
+    title: 'Bank credit by borrower, NZ$ billions',
+    height: 230,
+  });
+
+  const mix = creditMix(history);
+  const drift = mix.housingShare - mix.openingHousingShare;
+  const trend = drift > 0.5 ? 'crept up' : drift < -0.5 ? 'eased' : 'barely moved';
+  el('credit-note').innerHTML = `Mortgages are <b>NZ$${mix.last.housing.toFixed(0)}bn</b> of the
+    <b>NZ$${mix.last.total.toFixed(0)}bn</b> of bank credit (${mix.housingShare.toFixed(0)}%), and their
+    share ${trend} over the window. Lending is the largest single source of new money, so the mortgage
+    rate does most of the work here.`;
+}
+
 function renderInsight() {
   const h = runs.primary.history;
   const start = h[0];
@@ -1071,6 +1124,7 @@ function render() {
   renderKpis();
   renderCharts();
   renderWaterfall();
+  renderCreditMix();
   renderInsight();
   renderAccountsPanel();
 }
