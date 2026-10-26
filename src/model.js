@@ -12,8 +12,12 @@
  * The identities the whole model is built around, derived from the aggregate
  * balance sheet of registered banks:
  *
- *     dM3 = dBankCredit + d(CB purchases from non-banks) - retained earnings
+ *     dM3 = dBankCredit + d(CB purchases from non-banks) - retained earnings - flight
  *     dM2 = dM3 - d(shift of deposits into term deposits)
+ *
+ * "Flight" is term deposits taken out of the banking system because the bank
+ * underpriced them; it leaves M3 but never was M2, so it drops out of the second
+ * identity.
  *
  * Reserves appear in neither identity. That is the point: in a system without
  * reserve requirements (NZ abolished them in 1985), settlement cash is a
@@ -87,7 +91,17 @@ export const PARAMS = {
   depositConvenience: 0.7, // pp below wholesale that savers accept for liquidity and safety
   depositFlightElasticity: 0.6, // share of term deposits lost per year per pp of under-pricing
   maxFlightShare: 0.6, // cap on annual flight, as a share of the term deposit stock
+  flightMonthlyCap: 0.2, // no more than this share of the term stock can leave in one month
   qeTermCompressionMax: 0.9, // pp of term-premium compression at $100bn of holdings
+  stressRateSpread: 1.6, // pp added to wholesale funding at maximum stress
+  depositBenchmarkOcrWeight: 0.35, // weight on the OCR in the deposit pricing benchmark
+  termDepositFloor: 0.05, // a deposit rate does not go below this
+  onCallOcrShare: 0.1, // on-call deposit rate as a share of the OCR
+  // Cheap funding facility: subsidy strength and how far it passes into each rate
+  flpIntensityDenominator: 0.25, // facility size, as a share of bank assets, that saturates the subsidy
+  maxFundingSubsidy: 0.8, // pp of funding-cost relief at saturation
+  flpMortgagePassThrough: 0.3, // share of the subsidy passed into mortgage rates
+  securitiesYieldDiscount: 0.2, // bonds yield this much less than wholesale funding
 
   // Credit demand: annual % growth = base + sensitivity * (neutral real - real rate)
   baseHousing: 4.5,
@@ -96,6 +110,10 @@ export const PARAMS = {
   sensHousing: 0.85,
   sensBusiness: 0.55,
   sensConsumer: 0.45,
+  confidencePassThrough: 2.5, // pp of credit growth per 1.0 of confidence
+  lvrRateDrag: 1.8, // pp of credit growth at full macroprudential tightness
+  capitalThrottleGain: 10, // how hard a capital shortfall throttles new lending
+  capitalThrottleFloor: 0.15, // lending cannot be throttled below this share
 
   // Debt-service drag on new credit (symmetric around the opening burden)
   dsrThreshold: 8.5, // interest burden, % of private income
@@ -117,6 +135,12 @@ export const PARAMS = {
   currencyRatioSlope: 0.0015, // ratio points per 1pp of policy rate
   termShareIntercept: 0.286,
   termShareSlope: 0.025, // share points per pp of term-vs-on-call spread
+  termSharePivot: 2.875, // the spread at which savers hold the intercept share
+
+  // Structural floors. Banks do not sell their whole bond book, and settlement
+  // cash cannot go negative in a system with a standing lending facility.
+  securitiesFloor: 4,
+  reserveFloor: 2,
 
   // Macro feedback (illustrative reduced form, for the autopilot only)
   inflationPersistence: 0.75,
@@ -132,6 +156,7 @@ export const PARAMS = {
   // The deficit treated as structurally normal. Only the part above this line is
   // demand stimulus, so a deficit at or below it leaves the output gap alone.
   fiscalBaseline: 1.0,
+  fiscalImpulseWeight: 0.4, // how much a deficit of 1% of GDP adds to the output gap
 
   taylorInflationWeight: 0.5,
   taylorGapWeight: 0.5,
@@ -288,24 +313,50 @@ function paceIn(item, month) {
 /* Rate structure (shared by step() and the opening record)             */
 /* ------------------------------------------------------------------ */
 
+/**
+ * The benchmark a bank prices term deposits against. Deposits compete with the
+ * policy rate and with wholesale funding, so the benchmark blends the two.
+ */
+function fundingBenchmark(ocr, wholesale) {
+  const w = PARAMS.depositBenchmarkOcrWeight;
+  return w * ocr + (1 - w) * wholesale;
+}
+
+/**
+ * Lending rates from the two rates they are built out of. Defining them once means
+ * the neutral benchmark used for credit demand cannot drift from the rates the
+ * model actually charges.
+ */
+function lendingRates(ocr, wholesale, fundingSubsidy) {
+  const P = PARAMS;
+  const mortgage = 0.5 * ocr + 0.5 * wholesale + P.mortgageSpread - fundingSubsidy * P.flpMortgagePassThrough;
+  return {
+    mortgage,
+    businessRate: wholesale + P.businessSpread - fundingSubsidy,
+    consumerRate: mortgage + P.consumerSpread,
+  };
+}
+
 function rateStructure(s) {
   const P = PARAMS;
   const qeStock = s.rbnzGovtBonds + s.rbnzBankBonds;
   const qeCompression = Math.min(P.qeTermCompressionMax, (qeStock / 100) * P.qeTermCompressionMax);
-  const stressSpread = s.stress * 1.6;
+  const stressSpread = s.stress * P.stressRateSpread;
 
   const wholesale = Math.max(0, s.ocr + P.termPremium + stressSpread - qeCompression);
-  const flpIntensity = s.rbnzFlp / Math.max(1, bankAssets(s) * 0.25);
-  const fundingSubsidy = Math.min(0.8, flpIntensity * 0.8);
+  const flpIntensity = s.rbnzFlp / Math.max(1, bankAssets(s) * P.flpIntensityDenominator);
+  const fundingSubsidy = Math.min(P.maxFundingSubsidy, flpIntensity * P.maxFundingSubsidy);
 
   return {
     qeCompression,
+    fundingSubsidy,
     wholesale,
-    mortgage: 0.5 * s.ocr + 0.5 * wholesale + P.mortgageSpread - fundingSubsidy * 0.3,
-    businessRate: wholesale + P.businessSpread - fundingSubsidy,
-    consumerRate: 0.5 * s.ocr + 0.5 * wholesale + P.mortgageSpread - fundingSubsidy * 0.3 + P.consumerSpread,
-    termRate: Math.max(0.05, 0.35 * s.ocr + 0.65 * wholesale - (s.depositMargin ?? P.depositMargin)),
-    onCallRate: Math.max(0, 0.1 * s.ocr),
+    ...lendingRates(s.ocr, wholesale, fundingSubsidy),
+    termRate: Math.max(
+      P.termDepositFloor,
+      fundingBenchmark(s.ocr, wholesale) - (s.depositMargin ?? P.depositMargin),
+    ),
+    onCallRate: Math.max(0, P.onCallOcrShare * s.ocr),
   };
 }
 
@@ -330,19 +381,17 @@ function step(s, cfg, month, prev) {
   }
 
   /* -- 2. Interest rate structure ---------------------------------- */
-  const { wholesale, mortgage, businessRate, consumerRate, termRate, onCallRate, qeCompression } =
+  const { wholesale, mortgage, businessRate, consumerRate, termRate, onCallRate, qeCompression, fundingSubsidy } =
     rateStructure(s);
 
   /* -- 3. Credit demand -------------------------------------------- */
-  // Structural spreads over the policy rate, used to express the neutral
-  // benchmark on a like-for-like basis with each lending rate.
-  const structuralMortgage = 0.5 * P.termPremium + P.mortgageSpread;
-  const structuralBusiness = P.termPremium + P.businessSpread;
-  const structuralConsumer = structuralMortgage + P.consumerSpread;
+  // The neutral real rate expressed on the same basis as each lending rate, by
+  // evaluating the rate formula with the policy rate at zero.
+  const structural = lendingRates(0, P.termPremium, 0);
   const neutralReal = {
-    mortgage: P.neutralRealRate + structuralMortgage,
-    business: P.neutralRealRate + structuralBusiness,
-    consumer: P.neutralRealRate + structuralConsumer,
+    mortgage: P.neutralRealRate + structural.mortgage,
+    business: P.neutralRealRate + structural.businessRate,
+    consumer: P.neutralRealRate + structural.consumerRate,
   };
 
   const realMortgage = mortgage - s.expectedInflation;
@@ -356,8 +405,8 @@ function step(s, cfg, month, prev) {
     100;
   const dsrDrag = (interestBurden - P.dsrThreshold) * P.dsrDragCoefficient;
 
-  const confidenceTerm = (cfg.credit.confidence - 1) * 2.5; // 1.0 = neutral
-  const lvrDrag = cfg.credit.lvrTightness * 1.8;
+  const confidenceTerm = (cfg.credit.confidence - 1) * P.confidencePassThrough; // 1.0 = neutral
+  const lvrDrag = cfg.credit.lvrTightness * P.lvrRateDrag;
 
   const growthHousing =
     P.baseHousing +
@@ -385,7 +434,13 @@ function step(s, cfg, month, prev) {
   const targetCar = cfg.credit.capitalTarget ?? P.capitalTarget;
   const carNow = capitalRatio(s);
   let creditScale = 1;
-  if (carNow < targetCar) creditScale = clamp(1 - (targetCar - carNow) * 10, 0.15, 1);
+  if (carNow < targetCar) {
+    creditScale = clamp(
+      1 - (targetCar - carNow) * P.capitalThrottleGain,
+      P.capitalThrottleFloor,
+      1,
+    );
+  }
   dHousing *= creditScale;
   dBusiness *= creditScale;
   dConsumer *= creditScale;
@@ -406,11 +461,10 @@ function step(s, cfg, month, prev) {
   //   - banks do not sell (all purchases from non-banks): only the free float
   //     can be bought, or the bank holdings would exceed the debt outstanding;
   //   - banks sell down to their floor: the bank's holdings can reach debt − floor.
-  const securitiesFloor = 4;
   const nonBankGovtShare = cfg.govtPurchases.nonBankShare;
   const freeFloat = s.crownDebt - s.rbnzGovtBonds - s.bankSecurities;
   const byFreeFloat = nonBankGovtShare > 1e-9 ? freeFloat / nonBankGovtShare : Infinity;
-  const byBankFloor = s.crownDebt - s.rbnzGovtBonds - securitiesFloor;
+  const byBankFloor = s.crownDebt - s.rbnzGovtBonds - P.securitiesFloor;
   const availableGovtBonds = Math.max(0, Math.min(byFreeFloat, byBankFloor));
 
   const qeGovt = clamp(govtNet, -s.rbnzGovtBonds, availableGovtBonds);
@@ -423,7 +477,7 @@ function step(s, cfg, month, prev) {
   // rather than depleting a holding. Either way no deposit is created.
   const bankGovtSold = Math.min(
     qeGovt * (1 - cfg.govtPurchases.nonBankShare),
-    Math.max(0, s.bankSecurities - securitiesFloor),
+    Math.max(0, s.bankSecurities - P.securitiesFloor),
   );
   const bankBondsPlaced = qeBankBonds * (1 - cfg.bankBondPurchases.nonBankShare);
   const bankShareUsed = bankGovtSold + bankBondsPlaced;
@@ -446,7 +500,7 @@ function step(s, cfg, month, prev) {
     (s.loansHousing * mortgage +
       s.loansBusiness * businessRate +
       s.loansConsumer * consumerRate +
-      s.bankSecurities * Math.max(0, wholesale - 0.2) +
+      s.bankSecurities * Math.max(0, wholesale - P.securitiesYieldDiscount) +
       s.settlementCash * s.ocr) /
     100 /
     12;
@@ -470,11 +524,10 @@ function step(s, cfg, month, prev) {
   // Savers can take their money elsewhere. If the bank shaves too much off
   // market rates when pricing term deposits, term balances leave the banking
   // system and have to be replaced by wholesale borrowing.
-  const blendedFunding = 0.35 * s.ocr + 0.65 * wholesale;
-  const outsideRate = Math.max(0, blendedFunding - P.depositConvenience);
+  const outsideRate = Math.max(0, fundingBenchmark(s.ocr, wholesale) - P.depositConvenience);
   const underpricing = Math.max(0, outsideRate - termRate);
   const annualFlightShare = Math.min(P.maxFlightShare, P.depositFlightElasticity * underpricing);
-  const flight = Math.min(s.depTerm * 0.2, (annualFlightShare / 12) * s.depTerm);
+  const flight = Math.min(s.depTerm * P.flightMonthlyCap, (annualFlightShare / 12) * s.depTerm);
 
   const depositCreation = dLoans + dQeNonBank - retained;
   const oldDeposits = depositsTotal(s);
@@ -482,7 +535,7 @@ function step(s, cfg, month, prev) {
 
   const spread = termRate - onCallRate;
   const targetTermShare = clamp(
-    P.termShareIntercept + P.termShareSlope * (spread - 2.875) + cfg.households.termPreference,
+    P.termShareIntercept + P.termShareSlope * (spread - P.termSharePivot) + cfg.households.termPreference,
     0.15,
     0.6,
   );
@@ -558,9 +611,8 @@ function step(s, cfg, month, prev) {
   // Settlement cash cannot go negative. In a system with no reserve
   // requirement the central bank stands ready to lend reserves against
   // collateral, so draw on that facility instead.
-  const reserveFloor = 2;
-  if (s.settlementCash < reserveFloor) {
-    const advance = reserveFloor - s.settlementCash;
+  if (s.settlementCash < P.reserveFloor) {
+    const advance = P.reserveFloor - s.settlementCash;
     s.rbnzAdvances += advance;
     s.bankAdvances += advance;
     s.settlementCash += advance;
@@ -578,7 +630,7 @@ function step(s, cfg, month, prev) {
   const fiscalImpulse = cfg.fiscal.deficitPctGdp - P.fiscalBaseline;
   s.outputGap = clamp(
     P.outputGapPersistence * s.outputGap +
-      P.outputGapStancePass * (rateStance + fiscalImpulse * 0.4),
+      P.outputGapStancePass * (rateStance + fiscalImpulse * P.fiscalImpulseWeight),
     -8,
     8,
   );
@@ -651,6 +703,8 @@ function step(s, cfg, month, prev) {
     qeGovt,
     qeBankBonds,
     flpDraw,
+    qeCompression,
+    fundingSubsidy,
     deficit,
     writeoffs,
     profit,
@@ -719,10 +773,7 @@ export function run(config = {}, monthsOverride) {
       dCredit: 0,
       dQeNonBank: 0,
       dFlight: 0,
-      outsideRate: Math.max(
-        0,
-        0.35 * s.ocr + 0.65 * rateStructure(s).wholesale - PARAMS.depositConvenience,
-      ),
+      outsideRate: Math.max(0, fundingBenchmark(s.ocr, opening.wholesale) - PARAMS.depositConvenience),
       underpricing: 0,
       dRetained: 0,
       dTermShift: 0,
@@ -730,6 +781,8 @@ export function run(config = {}, monthsOverride) {
       qeGovt: 0,
       qeBankBonds: 0,
       flpDraw: 0,
+      qeCompression: opening.qeCompression,
+      fundingSubsidy: opening.fundingSubsidy,
       interestBurden: 0,
     },
   ];

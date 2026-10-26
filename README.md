@@ -108,6 +108,7 @@ src/main.js         bootstrap
 tests/model.test.js  accounting-identity, policy-path and robustness tests
 tests/charts.test.js axis-scale, path-building and tick-label tests
 tests/glossary.test.js every referenced term is defined, and every definition is used
+tests/ui.test.js     control wiring, and the figures each KPI breakdown quotes
 ```
 
 `src/model.js` is the part worth reading. It exports `run(config)` returning a full monthly history,

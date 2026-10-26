@@ -348,6 +348,49 @@ test('autopilot responds to an inflationary shock by raising the OCR', () => {
   assert.ok(history.at(-1).ocr > 3.5, `autopilot should tighten, got ${history.at(-1).ocr.toFixed(2)}`);
 });
 
+test('the sectors never hold more government debt than is outstanding', () => {
+  // balanceSheets() derives non-bank holdings as the residual, so a negative one
+  // would mean the model had conjured debt out of nowhere.
+  for (const scenario of SCENARIOS) {
+    const { final } = run(scenario.config);
+    assert.ok(
+      final.rbnzGovtBonds + final.bankSecurities <= final.crownDebt + 1e-6,
+      `${scenario.id}: central bank plus banks hold more debt than exists`,
+    );
+    const sheets = balanceSheets(final);
+    const heldByNonBanks = sheets.private.assets.find((r) => r.label === 'Government bonds').value;
+    assert.ok(heldByNonBanks >= -1e-9, `${scenario.id}: negative non-bank bond holdings`);
+  }
+});
+
+test('the rate record carries the figures the breakdowns quote', () => {
+  // The OCR panel used to re-derive these from raw state, so the panel and the
+  // model could disagree. They now come straight off the record.
+  const { history } = run({
+    months: 24,
+    govtPurchases: { pace: 2, months: 12, startMonth: 0, nonBankShare: 1 },
+    flp: { total: 10, months: 10, startMonth: 0 },
+  });
+  for (const r of history) {
+    assert.ok(Number.isFinite(r.qeCompression), `month ${r.month}: qeCompression missing`);
+    assert.ok(Number.isFinite(r.fundingSubsidy), `month ${r.month}: fundingSubsidy missing`);
+  }
+
+  const last = history.at(-1);
+  const qeStock = last.rbnzGovtBonds + last.rbnzBankBonds;
+  const expectedCompression = Math.min(
+    PARAMS.qeTermCompressionMax,
+    (qeStock / 100) * PARAMS.qeTermCompressionMax,
+  );
+  assert.ok(close(last.qeCompression, expectedCompression, 1e-12), 'compression must match the holdings');
+  assert.ok(
+    close(last.wholesale, Math.max(0, last.ocr + PARAMS.termPremium - last.qeCompression), 1e-9),
+    'the quoted wholesale rate must follow from the compression it reports',
+  );
+  assert.ok(last.fundingSubsidy > 0, 'drawing the facility should produce a subsidy');
+  assert.ok(last.fundingSubsidy <= PARAMS.maxFundingSubsidy + 1e-12, 'subsidy must stay capped');
+});
+
 test('balanceSheets() returns balanced sectors', () => {
   const { final } = run(SCENARIOS[1].config);
   const sheets = balanceSheets(final);

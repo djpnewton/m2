@@ -46,6 +46,14 @@ test('every control writes to a path the model actually reads', () => {
   }
 });
 
+test('every control supplies a formatter', () => {
+  // control() records each formatter as it renders so live slider updates reuse
+  // it; a control without one would show a raw number mid-drag.
+  const paths = controlPaths().length;
+  const formats = (source.match(/\bformat:/g) ?? []).length;
+  assert.equal(formats, paths, `${paths} control paths but ${formats} formatters`);
+});
+
 test('every control range is ordered and stepped sensibly', () => {
   const controls = [...source.matchAll(/min: (-?[\d.]+), max: (-?[\d.]+), step: ([\d.]+)/g)];
   assert.ok(controls.length > 5);

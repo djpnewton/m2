@@ -1,4 +1,4 @@
-import { run, mergeConfig, PARAMS, bankAssets } from './model.js';
+import { run, mergeConfig, PARAMS } from './model.js';
 import { SCENARIOS, getScenario } from './scenarios.js';
 import { lineChart, stackedArea, waterfall, COLORS } from './charts.js';
 import { renderAccounts } from './accounts.js';
@@ -36,6 +36,7 @@ function setConfig(path, value) {
 
 function control({ label, path, min, max, step, value, format, hint, disabled }) {
   const id = `ctl-${path.replaceAll('.', '-')}`;
+  if (format) formatters.set(path, format);
   return `<div class="control${disabled ? ' is-disabled' : ''}">
       <label for="${id}"><span>${label}</span><output id="${id}-out">${format(value)}</output></label>
       <input type="range" id="${id}" data-path="${path}" min="${min}" max="${max}" step="${step}"
@@ -89,7 +90,7 @@ function renderControls() {
 
     <details class="panel-block" open>
       <summary><h2>Government bond purchases</h2></summary>
-      ${control({ label: 'Pace', path: 'govtPurchases.pace', min: 0, max: 5, step: 0.05, value: c.govtPurchases.pace, format: (v) => `NZ$${v.toFixed(2)}bn / month`, hint: '' })}
+      ${control({ label: 'Pace', path: 'govtPurchases.pace', min: 0, max: 5, step: 0.05, value: c.govtPurchases.pace, format: (v) => `NZ$${v.toFixed(2)}bn / month` })}
       ${control({ label: 'Government bond buying period', path: 'govtPurchases.months', min: 0, max: 60, step: 1, value: c.govtPurchases.months, format: (v) => `${v} month${v === 1 ? '' : 's'}` })}
       ${control({
         label: 'Share of government bonds from non-banks',
@@ -205,31 +206,14 @@ function renderControls() {
   }
 }
 
-const FORMATTERS = {
-  'policy.start': (v) => `${v.toFixed(2)}%`,
-  'policy.end': (v) => `${v.toFixed(2)}%`,
-  'policy.convergeMonths': (v) => `${v} month${v === 1 ? '' : 's'}`,
-  'govtPurchases.pace': (v) => `NZ$${v.toFixed(2)}bn / month`,
-  'govtPurchases.months': (v) => `${v} month${v === 1 ? '' : 's'}`,
-  'govtPurchases.nonBankShare': (v) => `${Math.round(v * 100)}%`,
-  'govtSales.pace': (v) => `NZ$${v.toFixed(2)}bn / month`,
-  'govtSales.startMonth': (v) => (v >= 96 ? 'not within window' : `month ${v}`),
-  'bankBondPurchases.pace': (v) => `NZ$${v.toFixed(2)}bn / month`,
-  'bankBondPurchases.months': (v) => `${v} month${v === 1 ? '' : 's'}`,
-  'bankBondPurchases.nonBankShare': (v) => `${Math.round(v * 100)}%`,
-  'flp.total': (v) => `NZ$${v.toFixed(0)}bn`,
-  'flp.months': (v) => `${v} month${v === 1 ? '' : 's'}`,
-  'fiscal.deficitPctGdp': (v) => `${v.toFixed(1)}% of GDP`,
-  'credit.confidence': (v) => `${Math.round(v * 100)}%`,
-  'credit.lvrTightness': (v) => (v === 0 ? 'off' : `${Math.round(v * 100)}%`),
-  'credit.capitalTarget': (v) => `${(v * 100).toFixed(1)}%`,
-  'households.termPreference': (v) => `${signed(v * 100)}pp`,
-  'deposits.margin': (v) => `${v.toFixed(2)}pp below market`,
-  months: (v) => `${v} months (${Math.round(v / 12)} years)`,
-};
+/**
+ * Each slider formatter is defined once, at its call site, and recorded here as
+ * the controls render so live updates reuse the same function.
+ */
+const formatters = new Map();
 
 function formatFor(path, value) {
-  return (FORMATTERS[path] ?? String)(value);
+  return (formatters.get(path) ?? String)(value);
 }
 
 function ensureCompareDistinct() {
@@ -297,13 +281,15 @@ function seriesFor(accessor, name, color, opts = {}) {
   return out;
 }
 
-function yoy(history) {
-  return history
-    .filter((r, i) => i >= 12)
-    .map((r, i) => {
-      const base = history[i];
-      return [r.month, base && base.m2 > 0 ? (r.m2 / base.m2 - 1) * 100 : 0];
-    });
+/** Twelve-month growth in a stock, paired with the month it is measured at. */
+function growthRateSeries(history, accessor) {
+  const out = [];
+  for (let i = 12; i < history.length; i++) {
+    const then = accessor(history[i - 12]);
+    const now = accessor(history[i]);
+    out.push([history[i].month, then > 0 ? (now / then - 1) * 100 : 0]);
+  }
+  return out;
 }
 
 function metricContext() {
@@ -661,14 +647,8 @@ export const METRICS = [
     compare: () => '',
     detail: (c) => {
       const holdings = c.last.rbnzGovtBonds + c.last.rbnzBankBonds;
-      const compression = Math.min(
-        PARAMS.qeTermCompressionMax,
-        (holdings / 100) * PARAMS.qeTermCompressionMax,
-      );
-      const subsidy = Math.min(
-        0.8,
-        (c.last.rbnzFlp / Math.max(1, bankAssets(c.last) * 0.25)) * 0.8,
-      );
+      const compression = c.last.qeCompression;
+      const subsidy = c.last.fundingSubsidy;
       return {
         title: 'OCR — the policy rate',
         definition:
@@ -886,21 +866,18 @@ function renderCharts() {
   });
 
   const growthSeries = [
-    { name: 'M2 growth', color: COLORS.m2, width: 2.2, points: yoy(runs.primary.history) },
+    {
+      name: 'M2 growth',
+      color: COLORS.m2,
+      width: 2.2,
+      points: growthRateSeries(runs.primary.history, (r) => r.m2),
+    },
     {
       name: 'Bank credit growth',
       color: COLORS.credit,
       dashed: true,
       width: 1.6,
-      points: runs.primary.history
-        .filter((r, i) => i >= 12)
-        .map((r, i) => {
-          const base = runs.primary.history[i];
-          return [
-            r.month,
-            base && base.loansTotal > 0 ? (r.loansTotal / base.loansTotal - 1) * 100 : 0,
-          ];
-        }),
+      points: growthRateSeries(runs.primary.history, (r) => r.loansTotal),
     },
   ];
   if (runs.compare) {
@@ -909,7 +886,7 @@ function renderCharts() {
       color: COLORS.m2,
       dashed: true,
       width: 1.4,
-      points: yoy(runs.compare.history),
+      points: growthRateSeries(runs.compare.history, (r) => r.m2),
     });
   }
   applyChart('growth', lineChart, 'chart-growth', {
@@ -996,10 +973,7 @@ function renderWaterfall() {
     // bank now owns those bonds, which compresses the term premium.
     const last = history.at(-1);
     const holdings = last.rbnzGovtBonds + last.rbnzBankBonds;
-    const compression = Math.min(
-      PARAMS.qeTermCompressionMax,
-      (holdings / 100) * PARAMS.qeTermCompressionMax,
-    );
+    const compression = last.qeCompression;
     if (Math.abs(unmonetised) > 1 && compression > 0.05) {
       note += ` The bank-sourced slice is not inert, though: with NZ$${holdings.toFixed(0)}bn of holdings the
         ${defineTerm('term-premium', 'term premium')} is compressed by ${compression.toFixed(2)}pp, which is why
@@ -1058,10 +1032,6 @@ function renderAccountsPanel() {
 }
 
 /**
- * The prose quotes two figures that come from the model. Keep them in step rather
- * than restating them in HTML.
- */
-/**
  * How much of the current run's M2 traces to the deficit, measured against the
  * same settings with the deficit back at baseline. Bond sales swap deposits for
  * bonds, so whatever shows up here arrives through the credit demand the deficit
@@ -1081,6 +1051,7 @@ function fiscalCreditText() {
 }
 
 function syncProseFigures() {
+  // The prose quotes figures that come from the model rather than the HTML.
   const opening = runs.primary.history[0];
   const set = (id, text) => {
     const node = el(id);
