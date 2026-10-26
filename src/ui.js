@@ -1060,21 +1060,34 @@ export function boot() {
   mountGlossary();
   renderControls();
 
+  const focusTile = (key) => {
+    if (!key) return;
+    // Re-rendering replaces the tiles, so put focus back where the user left it.
+    el('kpis').querySelector(`[data-metric="${key}"]`)?.focus({ preventScroll: true });
+  };
+
   el('kpis').addEventListener('click', (event) => {
     const tile = event.target.closest('[data-metric]');
     if (!tile) return;
     const key = tile.dataset.metric;
     state.openMetric = state.openMetric === key ? null : key;
     renderKpis();
+    focusTile(key);
     if (state.openMetric) {
-      el('kpi-detail').scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+      el('kpi-detail').scrollIntoView({
+        block: 'nearest',
+        behavior: reduceMotion ? 'auto' : 'smooth',
+      });
     }
   });
 
   el('kpi-detail').addEventListener('click', (event) => {
     if (!event.target.closest('[data-close-detail]')) return;
+    const closing = state.openMetric;
     state.openMetric = null;
     renderKpis();
+    focusTile(closing);
   });
 
   el('account-slider').addEventListener('input', (e) => {
