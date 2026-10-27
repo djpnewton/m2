@@ -155,6 +155,9 @@ export const PARAMS = {
 
   // The deficit treated as structurally normal. Only the part above this line is
   // demand stimulus, so a deficit at or below it leaves the output gap alone.
+  // Resident population, millions. Only used to put the money stock in human terms.
+  population: 5.2,
+
   fiscalBaseline: 1.0,
   fiscalImpulseWeight: 0.4, // how much a deficit of 1% of GDP adds to the output gap
 

@@ -23,9 +23,9 @@ Any static server works. Tests need only Node 22+:
 npm test             # node --test tests/*.test.js
 ```
 
-205 tests: 143 cover the model (accounting identities, policy path, fiscal feedback, robustness), 38
-cover the chart helpers, 18 cover the page — control wiring and every figure the KPI breakdowns quote —
-and 6 cover the glossary. The chart tests import `src/charts.js` directly — it touches the DOM only inside its
+207 tests: 143 cover the model (accounting identities, policy path, fiscal feedback, robustness), 38
+cover the chart helpers, 20 cover the page — control wiring, every figure the KPI breakdowns quote, a
+starting hint for every preset, and the document order — and 6 cover the glossary. The chart tests import `src/charts.js` directly — it touches the DOM only inside its
 render functions, so the pure maths is testable without a browser or a DOM shim.
 
 ## What the model says

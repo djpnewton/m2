@@ -4,7 +4,7 @@ import fs from 'node:fs';
 
 import { mergeConfig, PARAMS, run } from '../src/model.js';
 import { SCENARIOS } from '../src/scenarios.js';
-import { creditMix, decomposeM2, METRICS } from '../src/ui.js';
+import { creditMix, decomposeM2, METRICS, START_HINTS } from '../src/ui.js';
 
 const source = fs.readFileSync(new URL('../src/ui.js', import.meta.url), 'utf8');
 const html = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
@@ -44,6 +44,16 @@ test('every control writes to a path the model actually reads', () => {
       node = node[part];
     }
   }
+});
+
+test('the controls stay ahead of the output in the document', () => {
+  // Narrow screens swap them with CSS `order`. Keeping the panel first in the
+  // source means a stale stylesheet falls back to the two-column layout rather
+  // than dropping the output into the 342px column, which is what happened once.
+  const panel = html.indexOf('id="controls"');
+  const output = html.indexOf('class="output"');
+  assert.ok(panel > -1 && output > -1, 'expected both a panel and an output container');
+  assert.ok(panel < output, 'the panel must come before the output in the source');
 });
 
 test('every control supplies a formatter', () => {
@@ -140,6 +150,20 @@ const rowNumber = (value) => {
   const n = Number.parseFloat(String(value).replace('−', '-'));
   return Number.isFinite(n) ? n : 0;
 };
+
+test('every preset tells the reader what to look at', () => {
+  // A preset that lands without a steer is the whole approachability problem back again.
+  for (const scenario of SCENARIOS) {
+    const hint = START_HINTS[scenario.id];
+    assert.ok(hint, `${scenario.id} has no starting hint`);
+    assert.ok(hint.length > 40 && hint.length < 260, `${scenario.id}: hint is ${hint.length} chars`);
+  }
+  assert.equal(
+    Object.keys(START_HINTS).length,
+    SCENARIOS.length,
+    'a hint is defined for a preset that no longer exists',
+  );
+});
 
 test('every KPI breakdown renders for every preset', () => {
   for (const scenario of SCENARIOS) {

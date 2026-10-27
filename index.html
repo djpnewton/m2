@@ -12,7 +12,7 @@
       rel="icon"
       href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2032%2032'%3E%3Crect%20width='32'%20height='32'%20rx='7'%20fill='%230f766e'/%3E%3Ctext%20x='16'%20y='22'%20font-family='Georgia,serif'%20font-size='14'%20fill='%23fff'%20text-anchor='middle'%3EM2%3C/text%3E%3C/svg%3E"
     />
-    <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="styles.css?v=2" />
   </head>
   <body>
     <header class="masthead">
@@ -20,9 +20,10 @@
         <p class="eyebrow">Monetary mechanics · modelled on the Reserve Bank of New Zealand</p>
         <h1>How interest rates and bond purchases become M2</h1>
         <p class="lede">
-          Money is created when banks lend and when a central bank buys assets from someone other than a
-          bank. This page is a working balance-sheet model of that plumbing. Move the levers and watch what
-          happens to the money stock, the monetary base, and the multiplier that connects them.
+          Money is created when banks lend, and when a central bank buys assets from someone other than a
+          bank. M2 is the money you can spend without notice — notes and coins plus on-call bank deposits.
+          This page is a working model of both: move the levers and watch the money stock, the base the
+          central bank pays with, and the multiplier that connects them.
         </p>
       </div>
     </header>
@@ -31,6 +32,7 @@
       <aside class="panel" id="controls" aria-label="Model controls"></aside>
 
       <div class="output">
+        <p class="start-hint" id="start-hint" hidden></p>
         <section class="kpi-strip" id="kpis" aria-label="Key results"></section>
         <p class="compare-note" id="kpi-compare-note"></p>
         <div class="kpi-detail" id="kpi-detail" role="region" aria-label="Metric breakdown" hidden></div>

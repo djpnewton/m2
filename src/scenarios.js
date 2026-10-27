@@ -25,7 +25,8 @@ export const SCENARIOS = [
   {
     id: 'neutral',
     name: 'Steady state',
-    blurb: 'Policy at neutral, small deficit, no asset purchases. Nothing much happens — which is the point.',
+    blurb:
+      'The control case: policy at neutral, no purchases, a small deficit. Nothing moves — which is the point. Every other preset is measured against this one.',
     config: {
       ...base,
       policy: { start: 3.5, end: 3.5, convergeMonths: 1 },

@@ -74,9 +74,9 @@ function renderControls() {
                  .join('')}
              </ul>
              <button class="ghost" id="ctl-simplify">Use a simple two-point path instead</button>`
-          : `${control({ label: 'Starting OCR', path: 'policy.start', min: 0, max: 8, step: 0.05, value: c.policy.start ?? 3.5, format: (v) => `${v.toFixed(2)}%` })}
-             ${control({ label: 'OCR after convergence', path: 'policy.end', min: 0, max: 8, step: 0.05, value: c.policy.end ?? 3.5, format: (v) => `${v.toFixed(2)}%` })}
-             ${control({ label: 'Months to converge', path: 'policy.convergeMonths', min: 1, max: 36, step: 1, value: c.policy.convergeMonths ?? 12, format: (v) => `${v} month${v === 1 ? '' : 's'}` })}`
+          : `${control({ label: 'Official cash rate to start', path: 'policy.start', min: 0, max: 8, step: 0.05, value: c.policy.start ?? 3.5, format: (v) => `${v.toFixed(2)}%` })}
+             ${control({ label: 'Official cash rate once settled', path: 'policy.end', min: 0, max: 8, step: 0.05, value: c.policy.end ?? 3.5, format: (v) => `${v.toFixed(2)}%` })}
+             ${control({ label: 'Months to get there', path: 'policy.convergeMonths', min: 1, max: 36, step: 1, value: c.policy.convergeMonths ?? 12, format: (v) => `${v} month${v === 1 ? '' : 's'}` })}`
       }
       <label class="switch">
         <input type="checkbox" id="ctl-autopilot" ${c.autopilot ? 'checked' : ''}>
@@ -88,12 +88,12 @@ function renderControls() {
       </p>
     </details>
 
-    <details class="panel-block" open>
+    <details class="panel-block">
       <summary><h2>Government bond purchases</h2></summary>
-      ${control({ label: 'Pace', path: 'govtPurchases.pace', min: 0, max: 5, step: 0.05, value: c.govtPurchases.pace, format: (v) => `NZ$${v.toFixed(2)}bn / month` })}
-      ${control({ label: 'Government bond buying period', path: 'govtPurchases.months', min: 0, max: 60, step: 1, value: c.govtPurchases.months, format: (v) => `${v} month${v === 1 ? '' : 's'}` })}
+      ${control({ label: 'Government bonds bought each month', path: 'govtPurchases.pace', min: 0, max: 5, step: 0.05, value: c.govtPurchases.pace, format: (v) => `NZ$${v.toFixed(2)}bn / month` })}
+      ${control({ label: 'Purchase period (government)', path: 'govtPurchases.months', min: 0, max: 60, step: 1, value: c.govtPurchases.months, format: (v) => `${v} month${v === 1 ? '' : 's'}` })}
       ${control({
-        label: 'Share of government bonds from non-banks',
+        label: 'Government bonds bought from non-banks',
         path: 'govtPurchases.nonBankShare',
         min: 0,
         max: 1,
@@ -102,17 +102,17 @@ function renderControls() {
         format: (v) => `${Math.round(v * 100)}%`,
         hint: `Only bonds sold by a non-bank create a deposit straight away. When a bank sells it swaps a bond for ${defineTerm('settlement-cash', 'reserves')} and no deposit exists — but the reserves do reach M2 eventually: the central bank now owns the bond, which compresses the ${defineTerm('term-premium', 'term premium')} and pulls lending rates down, so credit and deposits rise.`,
       })}
-      ${control({ label: 'Bond sales (QT) pace', path: 'govtSales.pace', min: 0, max: 3, step: 0.05, value: c.govtSales.pace, format: (v) => `NZ$${v.toFixed(2)}bn / month`, hint: `Selling bonds back — ${defineTerm('qt', 'quantitative tightening')} — drains settlement cash and shrinks the base.` })}
-      ${control({ label: 'Bond sales start', path: 'govtSales.startMonth', min: 0, max: 96, step: 1, value: c.govtSales.startMonth, format: (v) => (v >= 96 ? 'not within window' : `month ${v}`) })}
+      ${control({ label: 'Government bonds sold each month', path: 'govtSales.pace', min: 0, max: 3, step: 0.05, value: c.govtSales.pace, format: (v) => `NZ$${v.toFixed(2)}bn / month`, hint: `Selling bonds back — ${defineTerm('qt', 'quantitative tightening')} — drains settlement cash and shrinks the base.` })}
+      ${control({ label: 'Selling starts at month', path: 'govtSales.startMonth', min: 0, max: 96, step: 1, value: c.govtSales.startMonth, format: (v) => (v >= 96 ? 'not within window' : `month ${v}`) })}
     </details>
 
     <details class="panel-block">
       <summary><h2>Bank bonds and funding</h2></summary>
-      ${control({ label: 'Buy bank bonds', path: 'bankBondPurchases.pace', min: 0, max: 4, step: 0.05, value: c.bankBondPurchases.pace, format: (v) => `NZ$${v.toFixed(2)}bn / month` })}
-      ${control({ label: 'Bank bond buying period', path: 'bankBondPurchases.months', min: 0, max: 60, step: 1, value: c.bankBondPurchases.months, format: (v) => `${v} month${v === 1 ? '' : 's'}` })}
-      ${control({ label: 'Share of bank bonds from non-banks', path: 'bankBondPurchases.nonBankShare', min: 0, max: 1, step: 0.05, value: c.bankBondPurchases.nonBankShare, format: (v) => `${Math.round(v * 100)}%` })}
-      ${control({ label: 'Cheap funding to banks (total)', path: 'flp.total', min: 0, max: 40, step: 1, value: c.flp.total, format: (v) => `NZ$${v.toFixed(0)}bn`, hint: `Like the ${defineTerm('funding-for-lending', 'Funding for Lending Programme')}. It creates reserves but no deposits; it reaches M2 only through the lending rate — cheaper funding lowers the rate, which raises credit demand, and each new loan creates a deposit. Small lever, slow channel.` })}
-      ${control({ label: 'Funding drawn over', path: 'flp.months', min: 0, max: 36, step: 1, value: c.flp.months, format: (v) => `${v} month${v === 1 ? '' : 's'}` })}
+      ${control({ label: 'Bank bonds bought each month', path: 'bankBondPurchases.pace', min: 0, max: 4, step: 0.05, value: c.bankBondPurchases.pace, format: (v) => `NZ$${v.toFixed(2)}bn / month` })}
+      ${control({ label: 'Purchase period (bank bonds)', path: 'bankBondPurchases.months', min: 0, max: 60, step: 1, value: c.bankBondPurchases.months, format: (v) => `${v} month${v === 1 ? '' : 's'}` })}
+      ${control({ label: 'Bank bonds bought from non-banks', path: 'bankBondPurchases.nonBankShare', min: 0, max: 1, step: 0.05, value: c.bankBondPurchases.nonBankShare, format: (v) => `${Math.round(v * 100)}%` })}
+      ${control({ label: 'Cheap funding offered to banks', path: 'flp.total', min: 0, max: 40, step: 1, value: c.flp.total, format: (v) => `NZ$${v.toFixed(0)}bn`, hint: `Like the ${defineTerm('funding-for-lending', 'Funding for Lending Programme')}. It creates reserves but no deposits; it reaches M2 only through the lending rate — cheaper funding lowers the rate, which raises credit demand, and each new loan creates a deposit. Small lever, slow channel.` })}
+      ${control({ label: 'Cheap funding drawn over', path: 'flp.months', min: 0, max: 36, step: 1, value: c.flp.months, format: (v) => `${v} month${v === 1 ? '' : 's'}` })}
     </details>
 
     <details class="panel-block">
@@ -128,25 +128,25 @@ function renderControls() {
         hint: `Extra yield lenders demand for each point of debt above ${PARAMS.debtThresholdPct}% of GDP. Turning it on also puts the interest bill inside the deficit, so a larger debt stock borrows against itself. Above nominal growth the debt ratio compounds without limit.`,
       })}
       ${control({ label: 'Government deficit', path: 'fiscal.deficitPctGdp', min: 0, max: 10, step: 0.5, value: c.fiscal.deficitPctGdp, format: (v) => `${v.toFixed(1)}% of GDP`, hint: `Bonds sold to the public swap a deposit for a bond, so the financing itself creates no deposit. Above the ${PARAMS.fiscalBaseline.toFixed(0)}%-of-GDP baseline the deficit also lifts demand, and the borrowing that follows does create deposits.` })}
-      ${control({ label: 'Confidence / credit demand', path: 'credit.confidence', min: 0.2, max: 1.6, step: 0.05, value: c.credit.confidence, format: (v) => `${Math.round(v * 100)}%` })}
-      ${control({ label: 'Macroprudential tightness (LVR/DTI)', path: 'credit.lvrTightness', min: 0, max: 1, step: 0.05, value: c.credit.lvrTightness, format: (v) => (v === 0 ? 'off' : `${Math.round(v * 100)}%`), hint: `Restrictions on high-${defineTerm('lvr', 'LVR')} or high-${defineTerm('dti', 'DTI')} lending. These slow credit without moving the policy rate.` })}
-      ${control({ label: 'Bank capital requirement', path: 'credit.capitalTarget', min: 0.1, max: 0.3, step: 0.005, value: c.credit.capitalTarget ?? PARAMS.capitalTarget, format: (v) => `${(v * 100).toFixed(1)}%`, hint: `Equity against ${defineTerm('risk-weighted-capital', 'risk-weighted assets')}. This is the binding constraint on lending.` })}
-      ${control({ label: 'Preference for term deposits', path: 'households.termPreference', min: -0.15, max: 0.25, step: 0.01, value: c.households.termPreference, format: (v) => signed(v * 100) + 'pp' })}
+      ${control({ label: 'Confidence', path: 'credit.confidence', min: 0.2, max: 1.6, step: 0.05, value: c.credit.confidence, format: (v) => `${Math.round(v * 100)}%` })}
+      ${control({ label: 'Lending restrictions (LVR / DTI)', path: 'credit.lvrTightness', min: 0, max: 1, step: 0.05, value: c.credit.lvrTightness, format: (v) => (v === 0 ? 'off' : `${Math.round(v * 100)}%`), hint: `Restrictions on high-${defineTerm('lvr', 'LVR')} or high-${defineTerm('dti', 'DTI')} lending. These slow credit without moving the policy rate.` })}
+      ${control({ label: 'Capital banks must hold', path: 'credit.capitalTarget', min: 0.1, max: 0.3, step: 0.005, value: c.credit.capitalTarget ?? PARAMS.capitalTarget, format: (v) => `${(v * 100).toFixed(1)}%`, hint: `Equity against ${defineTerm('risk-weighted-capital', 'risk-weighted assets')}. This is the binding constraint on lending.` })}
+      ${control({ label: "Savers' preference for term deposits", path: 'households.termPreference', min: -0.15, max: 0.25, step: 0.01, value: c.households.termPreference, format: (v) => signed(v * 100) + 'pp' })}
       ${control({
-        label: 'Deposit margin',
+        label: 'Deposit rate discount',
         path: 'deposits.margin',
         min: 0,
         max: 1.5,
         step: 0.05,
         value: c.deposits.margin,
-        format: (v) => `${v.toFixed(2)}pp below market`,
+        format: (v) => `${v.toFixed(2)}pp under market`,
         hint: `How much the bank shaves off market rates when pricing term deposits. Past about ${PARAMS.depositConvenience.toFixed(1)}pp savers move money elsewhere, and the bank replaces it with ${defineTerm('wholesale-funding', 'wholesale funding')} at <span id="hint-wholesale">${openingWholesale.toFixed(2)}%</span>.`,
       })}
     </details>
 
     <div class="panel-block">
       <h2>Window</h2>
-      ${control({ label: 'Forecast horizon', path: 'months', min: 24, max: 120, step: 12, value: c.months, format: (v) => `${v} months (${Math.round(v / 12)} years)` })}
+      ${control({ label: 'How far ahead to show', path: 'months', min: 24, max: 120, step: 12, value: c.months, format: (v) => `${v} months (${Math.round(v / 12)} years)` })}
       <label class="switch">
         <input type="checkbox" id="ctl-compare" ${state.compareOn ? 'checked' : ''}>
         <span>Compare with another scenario</span>
@@ -370,7 +370,9 @@ export const METRICS = [
     key: 'm2',
     label: 'M2',
     value: (c) => `NZ$${bn(c.last.m2)}bn`,
-    sub: (c) => `${growthPct(c.last.m2, c.prevYear.m2).toFixed(1)}% over the past year`,
+    sub: (c) =>
+      `${growthPct(c.last.m2, c.prevYear.m2).toFixed(1)}% over the past year · ` +
+      `NZ$${Math.round(c.last.m2 / PARAMS.population)}k per person`,
     compare: (c) => (c.cmp ? `vs NZ$${bn(c.cmp.m2)}bn in comparison` : ''),
     detail: (c) => {
       const { credit, qe, retained, term } = decomposeM2(c.h);
@@ -379,7 +381,7 @@ export const METRICS = [
       return {
         title: 'M2 — money you can spend',
         definition:
-          'Currency in circulation plus transaction and on-call savings deposits: the money households and firms can spend without giving notice. Every row below is a flow that adds to or subtracts from it.',
+          `Currency in circulation plus transaction and on-call savings deposits: the money households and firms can spend without giving notice — about NZ$${Math.round(c.last.m2 / PARAMS.population)}k for every New Zealander. Every row below is a flow that adds to or subtracts from it.`,
         rows: [
           {
             label: 'New bank lending',
@@ -808,6 +810,37 @@ export const METRICS = [
   },
 ];
 
+/**
+ * What to look at in the scenario currently loaded. Approachability, not analysis:
+ * each one names the thing that is about to happen before it happens.
+ */
+export const START_HINTS = {
+  neutral:
+    'Nothing moves here, by design — this is the control case. Try <b>Bond purchases only</b> next: the Reserve Bank creates a great deal of reserves and comparatively little money.',
+  covid:
+    'Everything at once: deep cuts, bond purchases, cheap bank funding and a large deficit, then the fastest tightening since the OCR began. Use the compare switch to hold it against the control case.',
+  'qe-only':
+    'Watch the monetary base outrun M2. The multiplier collapses because buying bonds from banks mostly swaps one asset for another. Compare it with <b>Rate cuts only</b>.',
+  'rates-only':
+    'No asset purchases at all, and M2 still moves further than in the bond-buying case. The rate works by changing how much borrowing is worth doing.',
+  'bank-bonds':
+    'The central bank buys bank bonds rather than government ones. Its balance sheet grows either way; M2 only grows to the extent non-banks did the selling.',
+  tightening:
+    'This is money being destroyed: credit contracts, so deposits shrink, and the central bank is selling bonds back at the same time.',
+  'credit-crunch':
+    'Cheap money with no willing borrowers. Confidence and capital, not the interest rate, are what bind here.',
+  'fiscal-dominance':
+    'Debt now prices into interest rates. Watch the long rate climb as the debt stock grows — then watch the central bank buy bonds to hold it down, and where those purchases end up.',
+};
+
+function renderStartHint() {
+  const node = el('start-hint');
+  if (!node) return;
+  const text = START_HINTS[state.scenarioId];
+  node.hidden = !text;
+  node.innerHTML = text ?? '';
+}
+
 function renderKpis() {
   const c = metricContext();
 
@@ -1161,6 +1194,7 @@ function syncProseFigures() {
 function render() {
   refreshRuns();
   syncProseFigures();
+  renderStartHint();
   renderKpis();
   renderCharts();
   renderWaterfall();

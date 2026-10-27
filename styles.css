@@ -118,6 +118,7 @@ a {
   padding-bottom: 56px;
 }
 
+
 .output {
   display: flex;
   flex-direction: column;
@@ -610,8 +611,10 @@ input[type='range']:focus-visible::-webkit-slider-thumb {
   display: block;
 }
 
+/* Push the link to the bottom so a sub-line that wraps does not misalign the row. */
 .kpi-more {
-  margin-top: 7px;
+  margin-top: auto;
+  padding-top: 7px;
   font-size: 9.5px;
   letter-spacing: 0.09em;
   text-transform: uppercase;
@@ -783,6 +786,18 @@ input[type='range']:focus-visible::-webkit-slider-thumb {
 
 .kpi.down .kpi-value {
   color: var(--amber);
+}
+
+/* A one-line steer for people who have just landed on the page. */
+.start-hint {
+  margin: 0;
+  padding: 12px 15px;
+  border-left: 3px solid var(--accent);
+  background: var(--accent-soft);
+  border-radius: 0 var(--radius) var(--radius) 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--ink-2);
 }
 
 .compare-note {
@@ -1116,6 +1131,12 @@ input[type='range']:focus-visible::-webkit-slider-thumb {
   .layout {
     grid-template-columns: 1fr;
     gap: 20px;
+  }
+  /* One column: lead with the results. The panel stays first in the document so
+     that a stale stylesheet falls back to the two-column layout rather than
+     dropping the output into the narrow column. */
+  .layout > .output {
+    order: -1;
   }
   .panel {
     position: static;
