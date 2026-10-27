@@ -23,9 +23,9 @@ Any static server works. Tests need only Node 22+:
 npm test             # node --test tests/*.test.js
 ```
 
-182 tests: 125 cover the model (accounting identities, policy path, robustness), 38 cover the chart
-helpers, 13 cover the page — control wiring and every figure the KPI breakdowns quote — and 6 cover the
-glossary. The chart tests import `src/charts.js` directly — it touches the DOM only inside its
+205 tests: 143 cover the model (accounting identities, policy path, fiscal feedback, robustness), 38
+cover the chart helpers, 18 cover the page — control wiring and every figure the KPI breakdowns quote —
+and 6 cover the glossary. The chart tests import `src/charts.js` directly — it touches the DOM only inside its
 render functions, so the pure maths is testable without a browser or a DOM shim.
 
 ## What the model says
@@ -193,6 +193,10 @@ display and for the optional Taylor-rule autopilot. It is not a forecasting mode
   forced to source more from non-banks than the slider requests. The app says so when it happens.
 - Bank operating costs are folded into a single cost rate calibrated to deliver a realistic return on
   equity, not modelled line by line.
+- The fiscal feedback loop — debt/GDP pricing into the long rate, and the interest bill sitting inside
+  the deficit — is off by default and turned on with the **Debt risk premium** control. Switching it on
+  reinterprets the deficit control as a *primary* deficit. Once the resulting rate exceeds nominal GDP
+  growth the debt ratio compounds without limit; the model has no stabiliser to stop it.
 - No fiscal reaction function, no exchange rate, no term structure beyond a single term premium.
 
 ## Presets
@@ -206,3 +210,4 @@ display and for the optional Taylor-rule autopilot. It is not a forecasting mode
 | Central bank buys bank bonds | The commercial-bank-bond channel. |
 | Aggressive tightening + QT | Reserves drain, credit contracts, deposits shrink. |
 | Credit crunch | Cheap money with no willing borrowers creates no money. |
+| High debt and fiscal dominance | A 7% primary deficit at 4bp per point of debt. The premium pushes the long rate up, and the central bank buys bonds to hold it down — which lands in M2. |

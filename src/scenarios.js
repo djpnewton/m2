@@ -114,6 +114,21 @@ export const SCENARIOS = [
       credit: { confidence: 0.35, lvrTightness: 0.8, capitalTarget: 0.155 },
     },
   },
+  {
+    id: 'fiscal-dominance',
+    name: 'High debt and fiscal dominance',
+    blurb: (c) =>
+      `A ${c.fiscal.deficitPctGdp}%-of-GDP primary deficit while lenders charge
+       ${(c.fiscal.riskSensitivity * 100).toFixed(0)}bp of extra yield per point of debt. The long rate climbs,
+       and the central bank buys ${money(purchaseTotal(c))} of bonds to hold it down — purchases that land in
+       the money stock.`,
+    config: {
+      ...base,
+      policy: { start: 3.5, end: 3.5, convergeMonths: 1 },
+      fiscal: { deficitPctGdp: 7, riskSensitivity: 0.04 },
+      govtPurchases: { pace: 1.5, months: 60, startMonth: 0, nonBankShare: 0.6 },
+    },
+  },
 ];
 
 export function getScenario(id) {

@@ -158,6 +158,12 @@ export const PARAMS = {
   fiscalBaseline: 1.0,
   fiscalImpulseWeight: 0.4, // how much a deficit of 1% of GDP adds to the output gap
 
+  // Fiscal feedback. Off unless fiscal.riskSensitivity is turned up: at zero the
+  // term premium is a constant and interest payments are not in the deficit, which
+  // is the model's original behaviour.
+  debtThresholdPct: 40, // debt/GDP above which lenders charge a premium
+  debtRiskPerPoint: 0.04, // pp of yield per point above that, at the reference setting
+
   taylorInflationWeight: 0.5,
   taylorGapWeight: 0.5,
 };
@@ -179,7 +185,9 @@ export const DEFAULT_CONFIG = {
   // Funding-for-Lending style cheap funding facility, total NZ$bn.
   flp: { total: 0, months: 0, startMonth: 0 },
 
-  fiscal: { deficitPctGdp: PARAMS.fiscalBaseline },
+  // riskSensitivity is pp of yield per point of debt/GDP above the threshold, and
+  // switches on interest payments inside the deficit. Zero leaves debt unpriced.
+  fiscal: { deficitPctGdp: PARAMS.fiscalBaseline, riskSensitivity: 0 },
   credit: { confidence: 1.0, lvrTightness: 0, capitalTarget: null },
   households: { termPreference: 0 },
   deposits: { margin: 0.5 },
@@ -343,13 +351,22 @@ function rateStructure(s) {
   const qeCompression = Math.min(P.qeTermCompressionMax, (qeStock / 100) * P.qeTermCompressionMax);
   const stressSpread = s.stress * P.stressRateSpread;
 
-  const wholesale = Math.max(0, s.ocr + P.termPremium + stressSpread - qeCompression);
+  // The debt stock prices into the long rate, which is the rate banks fund at and
+  // the rate the Crown pays.
+  const debtRatio = (s.crownDebt / s.gdp) * 100;
+  const riskPremium = Math.max(0, debtRatio - P.debtThresholdPct) * (s.debtRisk ?? 0);
+  const wholesale = Math.max(
+    0,
+    s.ocr + P.termPremium + riskPremium + stressSpread - qeCompression,
+  );
   const flpIntensity = s.rbnzFlp / Math.max(1, bankAssets(s) * P.flpIntensityDenominator);
   const fundingSubsidy = Math.min(P.maxFundingSubsidy, flpIntensity * P.maxFundingSubsidy);
 
   return {
     qeCompression,
     fundingSubsidy,
+    riskPremium,
+    debtRatio,
     wholesale,
     ...lendingRates(s.ocr, wholesale, fundingSubsidy),
     termRate: Math.max(
@@ -381,8 +398,17 @@ function step(s, cfg, month, prev) {
   }
 
   /* -- 2. Interest rate structure ---------------------------------- */
-  const { wholesale, mortgage, businessRate, consumerRate, termRate, onCallRate, qeCompression, fundingSubsidy } =
-    rateStructure(s);
+  const {
+    wholesale,
+    mortgage,
+    businessRate,
+    consumerRate,
+    termRate,
+    onCallRate,
+    qeCompression,
+    fundingSubsidy,
+    riskPremium,
+  } = rateStructure(s);
 
   /* -- 3. Credit demand -------------------------------------------- */
   // The neutral real rate expressed on the same basis as each lending rate, by
@@ -493,7 +519,12 @@ function step(s, cfg, month, prev) {
   // receipts cover ordinary spending, and just the shortfall has to be financed
   // by issuing bonds. Bonds sold to the public create no deposits; only the
   // share the central bank buys does (via dQeNonBank above).
-  const deficit = (cfg.fiscal.deficitPctGdp / 100) * s.gdp / 12; // NZ$bn per month
+  // With debt priced, the deficit control is a *primary* deficit and the interest
+  // bill is added on top — which is what makes the debt stock feed back into itself.
+  const primaryDeficit = (cfg.fiscal.deficitPctGdp / 100) * s.gdp / 12; // NZ$bn per month
+  const govtInterest = (s.crownDebt * wholesale) / 100 / 12;
+  const debtServiceInDeficit = (s.debtRisk ?? 0) > 0 ? 1 : 0;
+  const deficit = primaryDeficit + debtServiceInDeficit * govtInterest;
 
   /* -- 8. Bank profit, write-offs, equity -------------------------- */
   const assetIncome =
@@ -705,6 +736,12 @@ function step(s, cfg, month, prev) {
     flpDraw,
     qeCompression,
     fundingSubsidy,
+    riskPremium,
+    debtRatio: (s.crownDebt / s.gdp) * 100,
+    // The part of the interest bill actually charged to the deficit: zero unless
+    // debt is priced, which is what keeps the default behaviour unchanged.
+    govtInterest: debtServiceInDeficit * govtInterest,
+    primaryDeficit,
     deficit,
     writeoffs,
     profit,
@@ -724,6 +761,7 @@ export function run(config = {}, monthsOverride) {
   const months = monthsOverride ?? cfg.months;
   const s = createInitialState();
   s.depositMargin = cfg.deposits?.margin ?? PARAMS.depositMargin;
+  s.debtRisk = cfg.fiscal?.riskSensitivity ?? 0;
   s.ocr = policyRateAt(cfg, 0);
   const opening = rateStructure(s);
   const history = [
@@ -783,6 +821,10 @@ export function run(config = {}, monthsOverride) {
       flpDraw: 0,
       qeCompression: opening.qeCompression,
       fundingSubsidy: opening.fundingSubsidy,
+      riskPremium: opening.riskPremium,
+      debtRatio: opening.debtRatio,
+      govtInterest: 0,
+      primaryDeficit: 0,
       interestBurden: 0,
     },
   ];

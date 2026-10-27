@@ -363,6 +363,66 @@ test('the sectors never hold more government debt than is outstanding', () => {
   }
 });
 
+test('the debt feedback loop is off in every preset except the one built for it', () => {
+  for (const scenario of SCENARIOS) {
+    if (scenario.id === 'fiscal-dominance') continue;
+    const cfg = mergeConfig(scenario.config);
+    assert.equal(cfg.fiscal.riskSensitivity, 0, `${scenario.id} should not charge a debt premium`);
+    const { history } = run(scenario.config);
+    assert.ok(
+      history.every((r) => r.riskPremium === 0 && r.govtInterest === 0),
+      `${scenario.id} moved a debt premium or interest bill while debt was unpriced`,
+    );
+  }
+});
+
+test('a debt premium turns on only past the threshold', () => {
+  const { history } = run({ months: 120, fiscal: { deficitPctGdp: 1, riskSensitivity: 0.04 } });
+  for (let i = 1; i < history.length; i++) {
+    // The premium is set from the stock at the start of the month, so compare with
+    // the previous month's ratio rather than this one.
+    if (history[i - 1].debtRatio <= PARAMS.debtThresholdPct) {
+      assert.ok(
+        close(history[i].riskPremium, 0, 1e-12),
+        `month ${i}: charged ${history[i].riskPremium} below the threshold`,
+      );
+    }
+  }
+  assert.ok(history.at(-1).riskPremium > 0, 'the debt ratio should cross the threshold in this run');
+});
+
+test('the premium raises the long rate and shrinks the money stock', () => {
+  const off = run({ months: 120, fiscal: { deficitPctGdp: 7, riskSensitivity: 0 } }).history.at(-1);
+  const on = run({ months: 120, fiscal: { deficitPctGdp: 7, riskSensitivity: 0.04 } }).history.at(-1);
+  assert.ok(
+    on.wholesale > off.wholesale + 1,
+    `long rate should rise well above ${off.wholesale.toFixed(2)}%, got ${on.wholesale.toFixed(2)}%`,
+  );
+  assert.ok(on.m2 < off.m2, `M2 should fall (${off.m2.toFixed(0)} -> ${on.m2.toFixed(0)})`);
+});
+
+test('interest sits inside the deficit only when debt is priced', () => {
+  const off = run({ months: 60, fiscal: { deficitPctGdp: 4, riskSensitivity: 0 } }).history.at(-1);
+  const on = run({ months: 60, fiscal: { deficitPctGdp: 4, riskSensitivity: 0.04 } }).history.at(-1);
+  assert.ok(close(off.govtInterest, 0, 1e-12), 'no interest bill while debt is unpriced');
+  assert.ok(on.govtInterest > 0.5, `expected a monthly interest bill, got ${on.govtInterest.toFixed(2)}bn`);
+  assert.ok(
+    on.crownDebt > off.crownDebt,
+    'the same primary deficit should borrow more once interest is on top',
+  );
+});
+
+test('with debt priced, a larger deficit stops adding to M2', () => {
+  // The headline result: once debt is priced, the rate channel outweighs the
+  // fiscal impulse.
+  const m2 = (deficit, riskSensitivity) =>
+    run({ months: 120, fiscal: { deficitPctGdp: deficit, riskSensitivity } }).history.at(-1).m2;
+  const unpriced = m2(7, 0) - m2(1, 0);
+  const priced = m2(7, 0.04) - m2(1, 0.04);
+  assert.ok(unpriced > 0, `with debt unpriced a deficit should add M2, got ${unpriced.toFixed(1)}`);
+  assert.ok(priced < 0, `with debt priced it should subtract, got ${priced.toFixed(1)}`);
+});
+
 test('the rate record carries the figures the breakdowns quote', () => {
   // The OCR panel used to re-derive these from raw state, so the panel and the
   // model could disagree. They now come straight off the record.

@@ -182,6 +182,23 @@ test('the M2 breakdown adds up, including when deposits flee', () => {
   }
 });
 
+test('the OCR breakdown warns when the rate outruns nominal growth', () => {
+  const hot = detailOf('ocr', { months: 120, fiscal: { deficitPctGdp: 10, riskSensitivity: 0.08 } });
+  assert.match(hot.reading, /above nominal growth/, 'a debt spiral should be called out');
+
+  // A debt premium is a second thing moving the rate structure, so the "only thing
+  // that changed was compression" sentence must not survive alongside it.
+  const fiscal = detailOf('ocr', { months: 60, fiscal: { deficitPctGdp: 7, riskSensitivity: 0.04 } });
+  assert.doesNotMatch(fiscal.reading, /the only thing that changed/);
+  assert.match(fiscal.reading, /debt at/i);
+
+  const wholesale = hot.rows.find((r) => r.label === 'Wholesale funding rate');
+  assert.match(wholesale.note, /debt risk/, 'the note must account for the premium it contains');
+
+  const mild = detailOf('ocr', { months: 60, fiscal: { deficitPctGdp: 1, riskSensitivity: 0.01 } });
+  assert.doesNotMatch(mild.reading, /above nominal growth/);
+});
+
 test('the credit mix covers the whole loan book', () => {
   // The stacked area is only meaningful if its three layers add up to the bank
   // credit figure the KPI tile reports.

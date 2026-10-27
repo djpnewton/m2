@@ -117,6 +117,16 @@ function renderControls() {
 
     <details class="panel-block">
       <summary><h2>Fiscal and credit conditions</h2></summary>
+      ${control({
+        label: 'Debt risk premium',
+        path: 'fiscal.riskSensitivity',
+        min: 0,
+        max: 0.15,
+        step: 0.01,
+        value: c.fiscal.riskSensitivity ?? 0,
+        format: (v) => (v === 0 ? 'off' : `${(v * 100).toFixed(0)}bp per point`),
+        hint: `Extra yield lenders demand for each point of debt above ${PARAMS.debtThresholdPct}% of GDP. Turning it on also puts the interest bill inside the deficit, so a larger debt stock borrows against itself. Above nominal growth the debt ratio compounds without limit.`,
+      })}
       ${control({ label: 'Government deficit', path: 'fiscal.deficitPctGdp', min: 0, max: 10, step: 0.5, value: c.fiscal.deficitPctGdp, format: (v) => `${v.toFixed(1)}% of GDP`, hint: `Bonds sold to the public swap a deposit for a bond, so the financing itself creates no deposit. Above the ${PARAMS.fiscalBaseline.toFixed(0)}%-of-GDP baseline the deficit also lifts demand, and the borrowing that follows does create deposits.` })}
       ${control({ label: 'Confidence / credit demand', path: 'credit.confidence', min: 0.2, max: 1.6, step: 0.05, value: c.credit.confidence, format: (v) => `${Math.round(v * 100)}%` })}
       ${control({ label: 'Macroprudential tightness (LVR/DTI)', path: 'credit.lvrTightness', min: 0, max: 1, step: 0.05, value: c.credit.lvrTightness, format: (v) => (v === 0 ? 'off' : `${Math.round(v * 100)}%`), hint: `Restrictions on high-${defineTerm('lvr', 'LVR')} or high-${defineTerm('dti', 'DTI')} lending. These slow credit without moving the policy rate.` })}
@@ -687,7 +697,11 @@ export const METRICS = [
             label: 'Wholesale funding rate',
             value: `${c.last.wholesale.toFixed(2)}%`,
             kind: 'level',
-            note: `OCR plus a ${PARAMS.termPremium.toFixed(2)}pp ${defineTerm('term-premium', 'term premium')}, less ${compression.toFixed(2)}pp compressed by NZ$${holdings.toFixed(0)}bn of central bank holdings.`,
+            note: `OCR plus a ${PARAMS.termPremium.toFixed(2)}pp ${defineTerm('term-premium', 'term premium')}${
+              c.last.riskPremium > 0.015
+                ? ` and ${c.last.riskPremium.toFixed(2)}pp of debt risk`
+                : ''
+            }, less ${compression.toFixed(2)}pp compressed by NZ$${holdings.toFixed(0)}bn of central bank holdings.`,
           },
           {
             label: 'Mortgage rate',
@@ -713,6 +727,16 @@ export const METRICS = [
                 },
               ]
             : []),
+          ...(c.last.riskPremium > 0.015
+            ? [
+                {
+                  label: 'Debt risk premium',
+                  value: `+${c.last.riskPremium.toFixed(2)}pp`,
+                  kind: 'add',
+                  note: `Debt at ${c.last.debtRatio.toFixed(0)}% of GDP against a ${PARAMS.debtThresholdPct}% threshold. This sits inside the deficit too, so a bigger debt stock raises its own interest bill.`,
+                },
+              ]
+            : []),
           {
             label: "Savers' outside option",
             value: `${c.last.outsideRate.toFixed(2)}%`,
@@ -724,10 +748,18 @@ export const METRICS = [
           },
         ],
         total: { label: 'Mortgage − OCR', value: `${(c.last.mortgage - c.last.ocr).toFixed(2)}pp` },
-        reading:
-          Math.abs(c.last.ocr - c.start.ocr) < 0.01
-            ? `The OCR never moved in this run, so the only thing that changed in the rate structure was ${compression.toFixed(2)}pp of term-premium compression from NZ$${holdings.toFixed(0)}bn of central bank holdings. That is how a purchase programme reaches lending rates without touching the policy rate.`
-            : `A rate cut raises M2 only if it persuades someone to borrow. That is why the rate channel is usually larger than the purchase channel — but slower, and dependent on borrowers showing up.`,
+        reading: (() => {
+          if ((c.cfg.fiscal.riskSensitivity ?? 0) > 0 && c.last.wholesale > PARAMS.gdpNominalGrowth) {
+            return `Lenders are charging ${c.last.riskPremium.toFixed(2)}pp on debt at ${c.last.debtRatio.toFixed(0)}% of GDP, which puts the long rate at ${c.last.wholesale.toFixed(2)}% — above nominal growth of ${PARAMS.gdpNominalGrowth.toFixed(1)}%. At that spread the debt ratio compounds upward on its own, and nothing in this model pulls it back.`;
+          }
+          if (c.last.riskPremium > 0.015) {
+            return `Debt at ${c.last.debtRatio.toFixed(0)}% of GDP is adding ${c.last.riskPremium.toFixed(2)}pp to the long rate, while NZ$${holdings.toFixed(0)}bn of central bank holdings takes ${compression.toFixed(2)}pp off it. The two partly cancel — and the debt risk is also inside the deficit, so it borrows against itself.`;
+          }
+          if (Math.abs(c.last.ocr - c.start.ocr) < 0.01) {
+            return `The OCR never moved in this run, so the only thing that changed in the rate structure was ${compression.toFixed(2)}pp of term-premium compression from NZ$${holdings.toFixed(0)}bn of central bank holdings. That is how a purchase programme reaches lending rates without touching the policy rate.`;
+          }
+          return 'A rate cut raises M2 only if it persuades someone to borrow. That is why the rate channel is usually larger than the purchase channel — but slower, and dependent on borrowers showing up.';
+        })(),
       };
     },
   },
@@ -1063,6 +1095,14 @@ function renderInsight() {
   if (creditShare > 0.8 && Math.abs(m2Change) > 2) {
     parts.push(
       `Almost all of the change in M2 came from bank lending to households and firms (${signed(last.loansTotal - start.loansTotal)}bn of credit). The interest rate works here by changing how much credit is worth taking on.`,
+    );
+  }
+
+  if ((state.config.fiscal.riskSensitivity ?? 0) > 0) {
+    parts.push(
+      last.wholesale > PARAMS.gdpNominalGrowth
+        ? `Debt at <b>${last.debtRatio.toFixed(0)}%</b> of GDP has pushed the long rate to <b>${last.wholesale.toFixed(2)}%</b>, above nominal growth of ${PARAMS.gdpNominalGrowth.toFixed(1)}%. The debt ratio is now compounding on itself — there is no stable level for it to settle at.`
+        : `Debt at <b>${last.debtRatio.toFixed(0)}%</b> of GDP adds <b>${last.riskPremium.toFixed(2)}pp</b> to the long rate, and the interest on it is inside the deficit.`,
     );
   }
 
