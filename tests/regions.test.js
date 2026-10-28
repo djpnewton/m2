@@ -131,15 +131,11 @@ test('each region has prose with its own figures to fill', () => {
 
 test('glossary overrides and titles cover the same keys in both regions', () => {
   const keys = Object.keys(GLOSSARY_OVERRIDES.us).sort();
-  assert.ok(keys.includes('broad-money'), 'the broad-money definition must be region-aware');
   assert.deepEqual(Object.keys(GLOSSARY_OVERRIDES.nz).sort(), keys);
   assert.deepEqual(Object.keys(GLOSSARY_TITLES.nz).sort(), Object.keys(GLOSSARY_TITLES.us).sort());
   // The New Zealand copy says 1985; the US copy says 2020.
   assert.match(GLOSSARY_OVERRIDES.nz['reserve-requirement'], /1985/);
   assert.match(GLOSSARY_OVERRIDES.us['reserve-requirement'], /2020/);
-  // The chart's money series is M2 in one region and broad money in the other.
-  assert.match(GLOSSARY_OVERRIDES.nz['broad-money'], /M3/);
-  assert.match(GLOSSARY_OVERRIDES.us['broad-money'], /M2/);
 });
 
 test('monetary base is currency plus reserves in both regions', () => {

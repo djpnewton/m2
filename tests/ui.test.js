@@ -315,3 +315,21 @@ test('the deploy bakes cache tags with the same code the dev server uses', () =>
   const server = fs.readFileSync(new URL('../scripts/nocache-server.py', import.meta.url), 'utf8');
   assert.match(server, /from cache_tag import rewrite/);
 });
+
+test('the legend swatch does not wipe its own dash pattern', () => {
+  // Regression: `style="background:<color>"` is a shorthand that resets
+  // background-image, so every dashed series showed a solid swatch. The colour
+  // has to be set with background-color.
+  const charts = fs.readFileSync(new URL('../src/charts.js', import.meta.url), 'utf8');
+  assert.match(charts, /background-color:\$\{item\.color\}/);
+  assert.doesNotMatch(charts, /style="background:\$\{item\.color\}"/);
+});
+
+test('the assumptions heading appears exactly once', () => {
+  // Regression: it lived in index.html *and* at the top of each region's prose,
+  // so the page showed the heading twice.
+  const heading = /Assumptions worth knowing/g;
+  assert.equal((html.match(heading) ?? []).length, 1, 'heading is duplicated in the markup');
+  assert.equal((prose.match(heading) ?? []).length, 0, 'the prose must not repeat the heading');
+  assert.match(html, /<h3>Assumptions worth knowing<\/h3>\s*<div id="assumptions">/);
+});

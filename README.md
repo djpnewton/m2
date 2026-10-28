@@ -58,9 +58,9 @@ you are relying on the browser's own caching.
 npm test             # node --test tests/*.test.js
 ```
 
-238 tests: 142 cover the model (accounting identities, policy path, fiscal feedback, robustness), 43
-cover the chart helpers, 22 cover the page — control wiring, every figure the KPI breakdowns quote, a
-starting hint for every preset, the document order and the cache tags — 13 cover the long-run history tables, 12 cover
+240 tests: 142 cover the model (accounting identities, policy path, fiscal feedback, robustness), 43
+cover the chart helpers, 23 cover the page — control wiring, every figure the KPI breakdowns quote, a
+starting hint for every preset, the document order and the cache tags — 14 cover the long-run history tables, 12 cover
 the regional split (keys, labels, identities in both calibrations, no hard-coded wording), and 6 cover
 the glossary. The chart and history tests import their modules
 directly — they touch the DOM only inside their render functions, so the pure maths is testable without

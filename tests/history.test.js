@@ -108,11 +108,6 @@ test('correlation is bounded and sign-correct', () => {
   assert.ok(Number.isNaN(correlation([1], [2])));
 });
 
-test('only the region whose chart plots broad money links the term', () => {
-  assert.equal(DATASETS.us.moneyTerm, null);
-  assert.equal(DATASETS.nz.moneyTerm, 'broad-money');
-});
-
 test('levels correlate almost perfectly, which is the trap', () => {
   // The note says so: two series that trend upward together will do this
   // whether or not one drives the other.
@@ -121,4 +116,26 @@ test('levels correlate almost perfectly, which is the trap', () => {
     HISTORY.map((row) => Math.log(row[SERIES.cpi])),
   );
   assert.ok(levels > 0.97, `level correlation ${levels.toFixed(3)}`);
+});
+
+test('both regions label the money series M2', () => {
+  // The chart is about the money stock; the New Zealand table's breadth is
+  // explained in the card note rather than in the series name.
+  assert.equal(DATASETS.us.moneyLabel, 'M2');
+  assert.equal(DATASETS.nz.moneyLabel, 'M2');
+});
+
+test('the New Zealand money column is M2, not a wider aggregate', () => {
+  // The World Bank calls its indicator "broad money"; for New Zealand the series
+  // it carries is the IMF's money-plus-quasi-money measure, which is M2. Spot
+  // values from IFS A.NZ.35L___XDC (millions, converted here to billions):
+  //   1980 6,364 · 1990 53,204 · 2000 94,531 · 2010 188,494
+  const expected = { 1980: 6.4, 1990: 53.2, 2000: 94.5, 2010: 188.5 };
+  for (const [year, value] of Object.entries(expected)) {
+    const row = DATASETS.nz.rows.find((r) => r[0] === Number(year));
+    assert.ok(
+      Math.abs(row[SERIES.m2] - value) < 0.06,
+      `${year}: table has ${row[SERIES.m2]}, IMF M2 is ${value}`,
+    );
+  }
 });

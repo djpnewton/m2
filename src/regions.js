@@ -242,10 +242,9 @@ export const TERMS = {
   },
 };
 
-/** The "Assumptions worth knowing" prose. Country-specific throughout. */
+/** The assumptions prose. Country-specific throughout; the heading lives in index.html. */
 export const PROSE = {
   us: `
-<h3>Assumptions worth knowing</h3>
 <ul>
   <li>
     <b>There is no binding <button type="button" class="term" data-term="reserve-requirement" aria-expanded="false">reserve requirement</button>.</b> US requirements went to zero in March 2020.
@@ -304,7 +303,6 @@ export const PROSE = {
 </ul>
     `,
   nz: `
-<h3>Assumptions worth knowing</h3>
 <ul>
   <li>
     <b>There is no <button type="button" class="term" data-term="reserve-requirement" aria-expanded="false">reserve requirement</button>.</b> New Zealand abolished compulsory reserves in 1985.
@@ -350,9 +348,9 @@ export const PROSE = {
   </li>
   <li>
     <b>M2 here is this model's definition</b> — currency plus transaction and on-call savings
-    deposits. The Reserve Bank publishes several aggregates and its own M3 — <button type="button" class="term" data-term="broad-money" aria-expanded="false">broad money</button> — is
-    broader, adding term deposits and funding from non-residents. Levels and growth rates will not
-    match published statistics exactly, and are not meant to.
+    deposits. The Reserve Bank publishes several aggregates and its own M3 is broader, adding term
+    deposits and funding from non-residents. Levels and growth rates will not match published
+    statistics exactly, and are not meant to.
   </li>
   <li>
     <b>Numbers are illustrative.</b> The opening balance sheet is calibrated to the shape and
@@ -369,7 +367,6 @@ export const PROSE = {
  */
 export const GLOSSARY_OVERRIDES = {
   us: {
-      'broad-money': 'A money aggregate wider than M2. For the United States the Fed\'s broadest published measure is M2 itself — there is no official M3 since 2006 — while cross-country datasets such as the World Bank\'s label each country\'s own broadest aggregate "broad money".',
       'reserve-balances': 'Balances banks hold in their accounts at the Fed to settle payments with each other, with the Treasury and with the Fed itself. Reserve requirements have been zero since March 2020 and the Fed pays interest on these balances, so they are supplied on demand: an outcome of policy operations, not a limit on lending.',
       'reserve-requirement': 'A rule requiring banks to hold a minimum share of their deposits as reserves. US requirements went to zero in March 2020, which is why reserves here are an outcome of central bank operations rather than a limit on lending.',
       'liquidity-coverage-ratio': 'A post-2008 rule requiring large banks to hold enough high-quality liquid assets — reserves and Treasuries — to survive thirty days of stressed outflows. It makes liquid assets worth holding, which is why a bank competes for stable deposits rather than treating them as a pile of money waiting to be lent.',
@@ -377,7 +374,6 @@ export const GLOSSARY_OVERRIDES = {
       'lvr': 'How much a bank will lend relative to the value of the property securing it. Caps on high-LTV lending, and the qualified-mortgage rules that cap debt-to-income, are macroprudential tools: they slow credit without moving the policy rate.',
   },
   nz: {
-      'broad-money': 'A money aggregate wider than M2. New Zealand\'s published broadest measure is M3 — currency and all deposits, including term deposits and funding from non-residents — which is the series the long-run chart plots.',
       'reserve-balances': 'Balances banks hold in their accounts at the Reserve Bank to settle payments with each other and with the Crown. New Zealand has had no reserve requirement since 1985, so the Reserve Bank supplies whatever is demanded.',
       'reserve-requirement': 'A rule requiring banks to hold a minimum share of their deposits as reserves. New Zealand removed compulsory reserves in 1985, which is why reserves here are an outcome of central bank operations rather than a limit on lending.',
       'liquidity-coverage-ratio': 'A Reserve Bank liquidity requirement: a minimum share of a bank lending must be funded by core funding, meaning equity, long-dated wholesale funding, and retail term deposits with a year or more still to run.',

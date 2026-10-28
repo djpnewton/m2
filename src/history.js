@@ -14,12 +14,15 @@
  * New Zealand
  *   gold  — NZ$ per troy ounce: the same London price at the average NZD/USD rate
  *   cpi   — consumer price index (World Bank FP.CPI.TOTL)
- *   m2    — broad money, NZ$ billions (World Bank FM.LBL.BMNY.CN)
+ *   m2    — M2, NZ$ billions: money plus quasi-money (IMF IFS, as published by the
+ *           World Bank under FM.LBL.BMNY.CN — the indicator's name is "broad
+ *           money", but the series is the IMF's money-plus-quasi-money measure,
+ *           matching IFS A.NZ.35L___XDC to rounding across 1980–2010)
  *   rgdp  — real GDP, constant 2015 US$ (World Bank NY.GDP.MKTP.KD)
  *
- * The World Bank's broad-money series has no observations for 2011 or 2012; those
- * two years are geometrically interpolated between 2010 and 2013 and are the only
- * constructed points in either table. Levels are annual averages, so 2020's
+ * The World Bank series has no observations for 2011 or 2012; those two years are
+ * geometrically interpolated between 2010 and 2013 and are the only constructed
+ * points in either table. Levels are annual averages, so 2020's
  * V-shaped quarterly path is smoothed, and the last year is a complete calendar
  * year. Nothing is fetched at runtime.
  */
@@ -131,15 +134,13 @@ export const DATASETS = {
     id: 'us',
     label: 'the United States',
     moneyLabel: 'M2',
-    moneyTerm: null,
     goldLabel: 'Gold, US$ an ounce',
     rows: US_ROWS,
   },
   nz: {
     id: 'nz',
     label: 'New Zealand',
-    moneyLabel: 'Broad money',
-    moneyTerm: 'broad-money',
+    moneyLabel: 'M2',
     goldLabel: 'Gold, NZ$ an ounce',
     rows: NZ_ROWS,
   },

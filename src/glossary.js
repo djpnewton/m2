@@ -27,11 +27,6 @@ export const GLOSSARY = {
     body: 'Balances banks hold in their accounts at the Fed to settle payments with each other, with the Treasury and with the Fed itself. Reserve requirements have been zero since March 2020 and the Fed pays interest on these balances, so they are supplied on demand: an outcome of policy operations, not a limit on lending.',
     wikipedia: 'https://en.wikipedia.org/wiki/Bank_reserves',
   },
-  'broad-money': {
-    title: 'Broad money',
-    body: 'A money aggregate wider than M2: currency and deposits plus the near-money claims that banks and money-market funds owe — term deposits, certificates of deposit, repos, and in some definitions money-market fund units. Countries publish it under different names (M3, M4, "broad money"), so where the boundary sits is a statistical convention rather than an economic one.',
-    wikipedia: 'https://en.wikipedia.org/wiki/Money_supply',
-  },
   'money-multiplier': {
     title: 'Money multiplier',
     body: 'M2 divided by the monetary base. An arithmetic ratio rather than a causal one: it falls whenever reserves are created faster than the money stock, which is what happens during asset purchases.',

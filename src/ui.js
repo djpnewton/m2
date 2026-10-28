@@ -998,8 +998,7 @@ function renderLongRun() {
 
   const blurb = el('longrun-blurb');
   if (blurb) {
-    const moneyHtml = h.moneyTerm ? defineTerm(h.moneyTerm, money) : money;
-    blurb.innerHTML = `Gold, consumer prices, ${moneyHtml} and real GDP for ${h.label}, each indexed to 100 in ${BASE_YEAR}. The dashed line is what the quantity equation implies if velocity never moved: ${money} ÷ real GDP.`;
+    blurb.textContent = `Gold, consumer prices, ${money} and real GDP for ${h.label}, each indexed to 100 in ${BASE_YEAR}. The dashed line is what the quantity equation implies if velocity never moved: ${money} ÷ real GDP.`;
   }
 
   const f = (v) => v.toFixed(1);
@@ -1016,8 +1015,7 @@ function renderLongRun() {
     h.rows.map((row) => Math.log(row[2])),
   );
 
-  const moneyHtml = h.moneyTerm ? defineTerm(h.moneyTerm, money) : money;
-  el('longrun-note').innerHTML = `${moneyHtml} grew <b>${f(h.multipleOf('m2'))}×</b> in ${h.label} while
+  el('longrun-note').innerHTML = `${money} grew <b>${f(h.multipleOf('m2'))}×</b> in ${h.label} while
     consumer prices grew <b>${f(h.multipleOf('cpi'))}×</b>. Real GDP grew
     <b>${f(h.multipleOf('rgdp'))}×</b>, so money growth in excess of real growth — the dashed line — rose
     <b>${f(implied)}×</b>, ${gap}% above actual inflation. Gold grew <b>${f(h.multipleOf('gold'))}×</b>,

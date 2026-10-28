@@ -120,7 +120,7 @@ function paintLegend(legend, items) {
   legend.innerHTML = items
     .map(
       (item) =>
-        `<span class="legend-item${item.dashed ? ' is-dashed' : ''}"><i style="background:${item.color}"></i>${item.name}</span>`,
+        `<span class="legend-item${item.dashed ? ' is-dashed' : ''}"><i style="background-color:${item.color}"></i>${item.name}</span>`,
     )
     .join('');
 }
