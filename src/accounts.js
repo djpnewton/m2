@@ -1,4 +1,5 @@
 import { balanceSheets } from './model.js';
+import { termsFor } from './regions.js';
 
 const fmt = (v) => v.toFixed(1);
 
@@ -42,19 +43,20 @@ function sectorCard(sector, scale) {
     </div>`;
 }
 
-export function renderAccounts(container, state) {
-  const sheets = balanceSheets(state);
-  const all = [...sheets.rbnz.assets, ...sheets.banks.assets, ...sheets.private.assets];
+export function renderAccounts(container, state, region = 'us') {
+  const terms = termsFor(region);
+  const sheets = balanceSheets(state, region);
+  const all = [...sheets.centralBank.assets, ...sheets.banks.assets, ...sheets.private.assets];
   const scale = Math.max(...all.map((r) => Math.abs(r.value)), 1);
 
   container.innerHTML = `
     <div class="acct-grid">
       ${sectorCard(sheets.banks, scale)}
-      ${sectorCard(sheets.rbnz, scale)}
+      ${sectorCard(sheets.centralBank, scale)}
       ${sectorCard(sheets.private, scale)}
     </div>
     <p class="acct-footnote">
-      All figures NZ$ billions. Rows tagged <em class="m2-tag">M2</em> are the components of the money
-      stock. The Reserve Bank's equity line is the residual that makes its balance sheet balance.
+      All figures ${terms.currency} billions. Rows tagged <em class="m2-tag">M2</em> are the components of the money
+      stock. The ${terms.centralBank}'s equity line is the residual that makes its balance sheet balance.
     </p>`;
 }

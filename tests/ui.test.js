@@ -8,6 +8,7 @@ import { creditMix, decomposeM2, METRICS, START_HINTS } from '../src/ui.js';
 
 const source = fs.readFileSync(new URL('../src/ui.js', import.meta.url), 'utf8');
 const html = fs.readFileSync(new URL('../index.html', import.meta.url), 'utf8');
+const prose = fs.readFileSync(new URL('../src/regions.js', import.meta.url), 'utf8');
 
 /** Labels of slider controls only — a `label:` immediately followed by a `path:`. */
 const controlLabels = () => [...source.matchAll(/label: '([^']+)',\s*\n?\s*path: '/g)].map((m) => m[1]);
@@ -44,6 +45,16 @@ test('every control writes to a path the model actually reads', () => {
       node = node[part];
     }
   }
+});
+
+test('the country picker lives outside the panel, so it survives a re-render', () => {
+  // Regression: it was rendered by renderControls(), which replaced the panel's
+  // innerHTML on every scenario change — and on narrow screens the whole panel
+  // sits below nine charts, where the picker was effectively invisible.
+  const masthead = html.slice(html.indexOf('class="masthead"'), html.indexOf('</header>'));
+  assert.match(masthead, /id="region-select"/, 'the picker belongs in the masthead');
+  assert.doesNotMatch(source, /<h2>Country<\/h2>/, 'the picker must not come from the panel template');
+  assert.match(source, /el\('region-select'\)\.addEventListener/);
 });
 
 test('the controls stay ahead of the output in the document', () => {
@@ -83,7 +94,8 @@ test('scenario blurbs quote figures derived from their own config', () => {
 
   const cfg = mergeConfig(covid.config);
   const total = cfg.govtPurchases.pace * cfg.govtPurchases.months;
-  assert.match(covid.blurb(cfg), new RegExp(`${Math.round(total)}bn`));
+  const headline = total >= 1000 ? `${(total / 1000).toFixed(1)}tn` : `${Math.round(total)}bn`;
+  assert.match(covid.blurb(cfg), new RegExp(headline.replace('.', '\\.')));
   assert.match(covid.blurb(cfg), new RegExp(`${cfg.fiscal.deficitPctGdp}%-of-GDP`));
 });
 
@@ -91,27 +103,26 @@ test('the deposit margin copy does not restate model figures', () => {
   // These were literals: a 0.7pp threshold and a 3.27% wholesale rate.
   assert.ok(!source.includes('3.27'), 'wholesale rate must come from the model');
   assert.ok(!/roughly\s+0\.7pp/.test(source), 'threshold must come from PARAMS.depositConvenience');
-  assert.match(source, /PARAMS\.depositConvenience/);
+  assert.match(source, /depositConvenience/);
   assert.match(source, /openingWholesale/);
 });
 
 test('the page prose fills its figures at runtime', () => {
-  assert.match(html, /id="prose-convenience"/);
-  assert.match(html, /id="prose-wholesale"/);
-  assert.match(html, /id="prose-fiscal-baseline"/);
-  assert.match(html, /id="prose-fiscal-credit"/);
+  assert.match(html, /id="assumptions"/);
+  assert.match(prose, /id="prose-convenience"/);
+  assert.match(prose, /id="prose-wholesale"/);
+  assert.match(prose, /id="prose-fiscal-baseline"/);
+  assert.match(prose, /id="prose-fiscal-credit"/);
   assert.match(source, /set\('prose-fiscal-baseline'/);
   assert.match(source, /set\('prose-fiscal-credit'/);
 
   // Each placeholder carries a no-JS fallback; the model overwrites it on load.
   // What must not happen is a stray hard-coded rate anywhere else in the prose.
-  const withoutPlaceholders = html
-    .replace(/<span id="prose-wholesale">[^<]*<\/span>/g, '')
-    .replace(/<span id="prose-convenience">[^<]*<\/span>/g, '');
+  const withoutPlaceholders = prose.replace(/<span id="prose-[a-z-]+">[^<]*<\/span>/g, '');
   assert.ok(!withoutPlaceholders.includes('3.27'), 'stray hard-coded wholesale rate');
   assert.ok(!/roughly\s+0\.7\s+percentage/.test(withoutPlaceholders), 'stray hard-coded threshold');
   assert.ok(
-    !html.includes('A deficit alone creates no money'),
+    !prose.includes('A deficit alone creates no money'),
     'the prose must not claim a deficit creates no money - it reaches M2 through credit',
   );
 });
@@ -206,20 +217,20 @@ test('the M2 breakdown adds up, including when deposits flee', () => {
   }
 });
 
-test('the OCR breakdown warns when the rate outruns nominal growth', () => {
-  const hot = detailOf('ocr', { months: 120, fiscal: { deficitPctGdp: 10, riskSensitivity: 0.08 } });
+test('the policy-rate breakdown warns when the rate outruns nominal growth', () => {
+  const hot = detailOf('policyRate', { months: 120, fiscal: { deficitPctGdp: 10, riskSensitivity: 0.08 } });
   assert.match(hot.reading, /above nominal growth/, 'a debt spiral should be called out');
 
   // A debt premium is a second thing moving the rate structure, so the "only thing
   // that changed was compression" sentence must not survive alongside it.
-  const fiscal = detailOf('ocr', { months: 60, fiscal: { deficitPctGdp: 7, riskSensitivity: 0.04 } });
+  const fiscal = detailOf('policyRate', { months: 60, fiscal: { deficitPctGdp: 7, riskSensitivity: 0.04 } });
   assert.doesNotMatch(fiscal.reading, /the only thing that changed/);
   assert.match(fiscal.reading, /debt at/i);
 
   const wholesale = hot.rows.find((r) => r.label === 'Wholesale funding rate');
   assert.match(wholesale.note, /debt risk/, 'the note must account for the premium it contains');
 
-  const mild = detailOf('ocr', { months: 60, fiscal: { deficitPctGdp: 1, riskSensitivity: 0.01 } });
+  const mild = detailOf('policyRate', { months: 60, fiscal: { deficitPctGdp: 1, riskSensitivity: 0.01 } });
   assert.doesNotMatch(mild.reading, /above nominal growth/);
 });
 
@@ -256,4 +267,26 @@ test('the base breakdown attributes the change to every source', () => {
   const reading = detailOf('base', covid.config).reading;
   assert.match(reading, /funding facility/, 'the funding facility also creates reserves');
   assert.doesNotMatch(reading, /rose by exactly that amount/);
+});
+
+test('a missing chart mount is skipped, not thrown', () => {
+  // Regression: a stale ui.js ran against new markup, the mount lookup returned
+  // null, and the whole page died before anything was drawn.
+  assert.match(source, /const mount = el\(mountId\)/);
+  assert.match(source, /if \(!mount\)/);
+  assert.match(source, /no #\$\{mountId\} on the page/);
+});
+
+test('boot failures name the stale-cache cause', () => {
+  const main = fs.readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
+  assert.match(main, /catch \(error\)/);
+  assert.match(main, /cached copy of the scripts/);
+  assert.match(main, /reportFatal/);
+});
+
+test('the entry module and stylesheet are cache-versioned', () => {
+  // Not a fix on its own — nested module imports keep their own URLs — but it
+  // stops the entry point and the CSS from drifting apart from the HTML.
+  assert.match(html, /src="src\/main\.js\?v=\d+"/);
+  assert.match(html, /href="styles\.css\?v=\d+"/);
 });

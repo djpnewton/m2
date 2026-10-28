@@ -73,7 +73,7 @@ for (const range of RANGES) {
 
 test('no axis is left with only two gridlines', () => {
   // Regression: the rates chart asked for 3.1-5.4 and got lines at 4.0 and 5.0,
-  // leaving the OCR and term-deposit lines floating with nothing to read them against.
+  // leaving the policy-rate and term-deposit lines floating with nothing to read them against.
   for (const { name, min, max, count } of RANGES) {
     const ticks = niceTicks(min, max, count);
     assert.ok(ticks.length >= 3, `${name}: only ${ticks.length} gridlines (${JSON.stringify(ticks)})`);

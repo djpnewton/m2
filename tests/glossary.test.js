@@ -4,7 +4,7 @@ import fs from 'node:fs';
 
 import { GLOSSARY, defineTerm } from '../src/glossary.js';
 
-const sources = ['../index.html', '../src/ui.js'].map((path) => ({
+const sources = ['../index.html', '../src/ui.js', '../src/regions.js'].map((path) => ({
   path,
   text: fs.readFileSync(new URL(path, import.meta.url), 'utf8'),
 }));

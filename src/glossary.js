@@ -9,6 +9,8 @@
  * link is only fetched if the reader chooses to follow it.
  */
 
+import { glossaryOverridesFor, glossaryTitlesFor } from './regions.js';
+
 export const GLOSSARY = {
   'taylor-rule': {
     title: 'Taylor rule',
@@ -17,30 +19,37 @@ export const GLOSSARY = {
   },
   qt: {
     title: 'Quantitative tightening',
-    body: 'The reverse of asset purchases. Bonds are sold back into the market, or allowed to mature without reinvestment, which drains settlement cash out of the banking system.',
+    body: 'The reverse of asset purchases. Bonds are sold back into the market, or allowed to mature without reinvestment, which drains reserve balances out of the banking system.',
     wikipedia: 'https://en.wikipedia.org/wiki/Quantitative_tightening',
   },
-  'settlement-cash': {
-    title: 'Settlement cash',
-    body: 'Balances banks hold in their accounts at the Reserve Bank to settle payments with each other and with the Crown. New Zealand has had no reserve requirement since 1985, so the Reserve Bank supplies whatever is demanded.',
+  'reserve-balances': {
+    title: 'Reserve balances',
+    body: 'Balances banks hold in their accounts at the Fed to settle payments with each other, with the Treasury and with the Fed itself. Reserve requirements have been zero since March 2020 and the Fed pays interest on these balances, so they are supplied on demand: an outcome of policy operations, not a limit on lending.',
     wikipedia: 'https://en.wikipedia.org/wiki/Bank_reserves',
+  },
+  'broad-money': {
+    title: 'Broad money',
+    body: 'A money aggregate wider than M2: currency and deposits plus the near-money claims that banks and money-market funds owe — term deposits, certificates of deposit, repos, and in some definitions money-market fund units. Countries publish it under different names (M3, M4, "broad money"), so where the boundary sits is a statistical convention rather than an economic one.',
+    wikipedia: 'https://en.wikipedia.org/wiki/Money_supply',
   },
   'money-multiplier': {
     title: 'Money multiplier',
     body: 'M2 divided by the monetary base. An arithmetic ratio rather than a causal one: it falls whenever reserves are created faster than the money stock, which is what happens during asset purchases.',
     wikipedia: 'https://en.wikipedia.org/wiki/Money_multiplier',
   },
-  'core-funding-ratio': {
-    title: 'Core funding ratio',
-    body: 'A Reserve Bank liquidity requirement: a minimum share of a bank lending must be funded by core funding, meaning equity, long-dated wholesale funding, and retail term deposits with a year or more still to run.',
+  'liquidity-coverage-ratio': {
+    title: 'Liquidity coverage ratio',
+    body: 'A post-2008 rule requiring large banks to hold enough high-quality liquid assets — reserves and Treasuries — to survive thirty days of stressed outflows. It makes liquid assets worth holding, which is why a bank competes for stable deposits rather than treating them as a pile of money waiting to be lent.',
+    wikipedia: 'https://en.wikipedia.org/wiki/Liquidity_coverage_ratio',
   },
-  'funding-for-lending': {
-    title: 'Funding for Lending Programme',
-    body: 'The Reserve Bank lending cheaply to banks against collateral in order to lower their funding costs. It creates settlement cash at once but deposits only later: cheaper funding lets banks cut lending rates, which raises credit demand, and lending is what creates deposits. The chain works, but weakly — a large facility moves M2 far less than an equivalent bond purchase.',
+  'funding-facility': {
+    title: 'Central bank funding facility',
+    body: 'The Fed lending cheaply to banks against collateral — the discount window, and the Bank Term Funding Program in 2023. It creates reserves at once but deposits only later: cheaper funding lets banks cut lending rates, which raises credit demand, and lending is what creates deposits. The chain works, but weakly — a large facility moves M2 far less than an equivalent bond purchase.',
+    wikipedia: 'https://en.wikipedia.org/wiki/Discount_window',
   },
   lvr: {
     title: 'Loan-to-value ratio',
-    body: 'How much a bank will lend relative to the value of the property securing it. Reserve Bank restrictions on high-LVR lending are a macroprudential tool: they slow credit without moving the policy rate.',
+    body: 'How much a bank will lend relative to the value of the property securing it. Caps on high-LTV lending, and the qualified-mortgage rules that cap debt-to-income, are macroprudential tools: they slow credit without moving the policy rate.',
     wikipedia: 'https://en.wikipedia.org/wiki/Loan-to-value_ratio',
   },
   dti: {
@@ -65,10 +74,25 @@ export const GLOSSARY = {
   },
   'reserve-requirement': {
     title: 'Reserve requirement',
-    body: 'A rule requiring banks to hold a minimum share of their deposits as reserves. New Zealand removed compulsory reserves in 1985, which is why reserves here are an outcome of central bank operations rather than a limit on lending.',
+    body: 'A rule requiring banks to hold a minimum share of their deposits as reserves. US requirements went to zero in March 2020, which is why reserves here are an outcome of central bank operations rather than a limit on lending.',
     wikipedia: 'https://en.wikipedia.org/wiki/Reserve_requirement',
   },
 };
+
+/**
+ * Swap in the country-specific wording. Both regions define every override, so
+ * switching back and forth is lossless.
+ */
+export function setGlossaryRegion(id = 'us') {
+  const bodies = glossaryOverridesFor(id);
+  const titles = glossaryTitlesFor(id);
+  for (const [key, body] of Object.entries(bodies)) {
+    if (GLOSSARY[key] && body) GLOSSARY[key] = { ...GLOSSARY[key], body };
+  }
+  for (const [key, title] of Object.entries(titles)) {
+    if (GLOSSARY[key] && title) GLOSSARY[key] = { ...GLOSSARY[key], title };
+  }
+}
 
 /**
  * Render a glossary term as a button, for use inside template strings.

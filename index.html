@@ -12,12 +12,21 @@
       rel="icon"
       href="data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2032%2032'%3E%3Crect%20width='32'%20height='32'%20rx='7'%20fill='%230f766e'/%3E%3Ctext%20x='16'%20y='22'%20font-family='Georgia,serif'%20font-size='14'%20fill='%23fff'%20text-anchor='middle'%3EM2%3C/text%3E%3C/svg%3E"
     />
-    <link rel="stylesheet" href="styles.css?v=2" />
+    <link rel="stylesheet" href="styles.css?v=6" />
   </head>
   <body>
     <header class="masthead">
       <div class="wrap">
-        <p class="eyebrow">Monetary mechanics · modelled on the Reserve Bank of New Zealand</p>
+        <div class="masthead-top">
+          <p class="eyebrow" id="masthead-region">Monetary mechanics · modelled on the Federal Reserve</p>
+          <label class="region-picker">
+            <span class="visually-hidden">Country model</span>
+            <select id="region-select">
+              <option value="us">United States</option>
+              <option value="nz">New Zealand</option>
+            </select>
+          </label>
+        </div>
         <h1>How interest rates and bond purchases become M2</h1>
         <p class="lede">
           Money is created when banks lend, and when a central bank buys assets from someone other than a
@@ -54,7 +63,7 @@
           <section class="card">
             <header class="card-head">
               <h3>The base, not the money</h3>
-              <p><button type="button" class="term" data-term="settlement-cash" aria-expanded="false">Settlement cash</button> is what the central bank pays with. It is not what banks lend.</p>
+              <p><button type="button" class="term" id="term-reserves" data-term="reserve-balances" aria-expanded="false">Reserves</button> are what the central bank pays with. They are not what banks lend.</p>
             </header>
             <div id="chart-base"></div>
           </section>
@@ -113,7 +122,7 @@
             <h3>Central bank balance sheet</h3>
             <p>The asset side of asset purchases. Every dollar bought shows up here.</p>
           </header>
-          <div id="chart-rbnz"></div>
+          <div id="chart-fed"></div>
         </section>
 
         <section class="card">
@@ -137,70 +146,28 @@
           <div id="accounts"></div>
         </section>
 
+        <section class="card">
+          <header class="card-head">
+            <h3>Four decades in one picture</h3>
+            <p id="longrun-blurb">
+              Gold, consumer prices, money and real GDP, each indexed to 100 in 1980. The dashed line is
+              what the quantity equation implies if velocity never moved: money ÷ real GDP.
+            </p>
+          </header>
+          <div id="chart-longrun"></div>
+          <p class="card-note" id="longrun-note"></p>
+        </section>
+
         <section class="card prose">
           <h3>Assumptions worth knowing</h3>
-          <ul>
-            <li>
-              <b>There is no <button type="button" class="term" data-term="reserve-requirement" aria-expanded="false">reserve requirement</button>.</b> New Zealand abolished compulsory reserves in 1985.
-              Banks hold settlement cash to settle payments with each other, and the central bank supplies
-              whatever is needed. So reserves are an outcome of policy operations, not a constraint that
-              forces lending to multiply.
-            </li>
-            <li>
-              <b>Loans create deposits.</b> Bank lending adds to deposits one-for-one; nothing is
-              "lent out" of existing deposits. Repaying a loan destroys the deposit again.
-            </li>
-            <li>
-              <b>Who sells matters.</b> When the central bank buys a bond from a pension fund, the seller
-              ends up with a deposit and M2 rises. When it buys from a bank's own book, the bank swaps a
-              bond for settlement cash and no deposit is created.
-            </li>
-            <li>
-              <b>Term deposits do not fund loans — but banks still compete for them.</b> The intuition
-              that a bank gathers deposits and lends them out has the arrow backwards: lending creates
-              the deposit that funds it, and a term deposit is a liability the bank owes, not a pile of
-              money waiting to be deployed. Banks pay up for term deposits because the alternative is
-              dearer. Wholesale funding costs more than a term deposit, and a balance the bank fails to
-              retain has to be replaced in that market. The premium over an on-call balance buys
-              duration — funding that cannot leave tomorrow — which is why New Zealand's <button type="button" class="term" data-term="core-funding-ratio" aria-expanded="false">core funding ratio</button> counts longer-dated retail deposits as core funding and requires a minimum share of
-              lending to be funded that way. The <em>deposit margin</em> control is where this bites:
-              the bank can shave its term deposit rate below market to save interest, but past roughly
-              <span id="prose-convenience">0.7</span> percentage points savers move their money to non-bank
-              assets and it has to replace those balances with wholesale borrowing at
-              <span id="prose-wholesale">3.81%</span>. Push the margin up and watch M3 fall
-              while M2 barely moves — the money was never in M2, and the cost lands on the bank's
-              profits. Wholesale funding is the residual here, so it rises one-for-one with what leaves.
-            </li>
-            <li>
-              <b>A deficit creates no deposits directly, but it does change how much gets borrowed.</b>
-              Ordinary spending is covered by tax receipts; only the shortfall — the deficit — has to
-              be financed by issuing bonds. Selling those bonds to the public swaps deposits for bonds,
-              so the financing leg creates no money: on its own, the money stock rises only as far as
-              the central bank buys the bonds. The model adds a slower second link. A deficit above the
-              <span id="prose-fiscal-baseline">1</span>%-of-GDP baseline lifts demand, firms and
-              households borrow against that demand, and lending creates deposits — so the deficit is
-              worth <span id="prose-fiscal-credit">+0.0</span>bn of M2 in the current run, all of it
-              arriving as bank credit rather than through the budget line itself.
-            </li>
-            <li>
-              <b>M2 here is this model's definition</b> — currency plus transaction and on-call savings
-              deposits. The Reserve Bank publishes several aggregates and its own M3 is broader, adding term
-              deposits and funding from non-residents. Levels and growth rates will not match published
-              statistics exactly, and are not meant to.
-            </li>
-            <li>
-              <b>Numbers are illustrative.</b> The opening balance sheet is calibrated to the shape and
-              scale of the New Zealand system around 2019, with every internal identity balancing exactly.
-              The behavioural parameters are judgement calls, not estimates.
-            </li>
-          </ul>
+          <div id="assumptions"></div>
         </section>
       </div>
     </main>
 
     <footer class="wrap footnote">
       <p>
-        A teaching model, not a forecast. All figures are NZ$ billions unless stated. The model solves no
+        <span id="footer-units">A teaching model, not a forecast. All figures are in billions of local currency unless stated.</span> The model solves no
         optimisation problem and has no expectations beyond a simple backward-looking anchor — it exists to
         make the accounting visible.
       </p>

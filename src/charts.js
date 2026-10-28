@@ -102,6 +102,9 @@ export function xTickLabels(months, count) {
 }
 
 function mountContainer(container) {
+  if (!container) {
+    throw new Error('chart mount point is missing from the page — stale markup or a cached script');
+  }
   container.innerHTML = '';
   container.classList.add('chart');
   const legend = document.createElement('div');
@@ -188,7 +191,8 @@ export function lineChart(container, spec) {
         label.textContent = (s.yFormat ?? String)(t);
         root.appendChild(label);
       }
-      for (const t of xTickLabels(xMax, Math.max(2, Math.floor(innerW / 78)))) {
+      const ticks = s.xTicks ?? xTickLabels(xMax, Math.max(2, Math.floor(innerW / 78)));
+      for (const t of ticks) {
         const label = svg('text', {
           x: X(t),
           y: margin.top + innerH + 16,

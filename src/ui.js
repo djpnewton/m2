@@ -1,12 +1,15 @@
-import { run, mergeConfig, PARAMS } from './model.js';
-import { SCENARIOS, getScenario } from './scenarios.js';
+import { run, mergeConfig } from './model.js';
+import { scenariosFor, getScenario } from './scenarios.js';
+import { paramsFor, proseFor, termsFor } from './regions.js';
 import { lineChart, stackedArea, waterfall, COLORS } from './charts.js';
 import { renderAccounts } from './accounts.js';
-import { defineTerm, mountGlossary } from './glossary.js';
+import { defineTerm, mountGlossary, setGlossaryRegion } from './glossary.js';
+import { BASE_YEAR, createHistory, correlation } from './history.js';
 
 const state = {
+  region: 'us',
   scenarioId: 'neutral',
-  config: mergeConfig(getScenario('neutral').config),
+  config: mergeConfig({ ...getScenario('neutral').config, region: 'us' }),
   compareId: 'covid',
   compareOn: false,
   accountMonth: null,
@@ -19,6 +22,10 @@ const signed = (v) => `${v >= 0 ? '+' : '−'}${Math.abs(v).toFixed(1)}`;
 
 let runs = { primary: null, compare: null };
 const charts = {};
+
+/** Active terminology and parameters. Re-bound whenever the region changes. */
+let t = termsFor('us');
+let P = paramsFor('us');
 
 /* ------------------------------------------------------------------ */
 /* Controls                                                            */
@@ -45,8 +52,40 @@ function control({ label, path, min, max, step, value, format, hint, disabled })
     </div>`;
 }
 
+/** Rebuild everything that depends on the region. */
+function setRegion(id) {
+  if (id === state.region) return;
+  state.region = id;
+  t = termsFor(id);
+  P = paramsFor(id);
+  setGlossaryRegion(id);
+  state.scenarioId = 'neutral';
+  state.config = mergeConfig({ ...getScenario('neutral', id).config, region: id });
+  renderControls();
+  render();
+}
+
+function renderProse() {
+  const reservesTerm = el('term-reserves');
+  if (reservesTerm) reservesTerm.textContent = t.reservesLabel;
+  const eyebrow = el('masthead-region');
+  if (eyebrow) eyebrow.textContent = `Monetary mechanics · modelled on the ${t.centralBankFull}`;
+  const units = el('footer-units');
+  if (units) {
+    units.textContent = `A teaching model, not a forecast. All figures are ${t.currency} billions unless stated. The model solves no optimisation problem and has no expectations beyond a simple backward-looking anchor — it exists to make the accounting visible.`;
+  }
+  const node = el('assumptions');
+  if (!node) return;
+  const markup = proseFor(state.region);
+  if (node.dataset.region !== state.region) {
+    node.innerHTML = markup;
+    node.dataset.region = state.region;
+  }
+}
+
 function renderControls() {
   const c = state.config;
+  const scenarios = scenariosFor(state.region);
   const hasKeyframes = Array.isArray(c.policy.keyframes);
   // The rate a bank would pay before any scenario movement, straight from the model.
   const openingWholesale = run(c, 0).history[0].wholesale;
@@ -55,7 +94,7 @@ function renderControls() {
     <div class="panel-block">
       <h2>Scenarios</h2>
       <div class="chips">
-        ${SCENARIOS.map(
+        ${scenarios.map(
           (s) =>
             `<button class="chip${s.id === state.scenarioId ? ' is-active' : ''}" data-scenario="${s.id}">${s.name}</button>`,
         ).join('')}
@@ -74,8 +113,8 @@ function renderControls() {
                  .join('')}
              </ul>
              <button class="ghost" id="ctl-simplify">Use a simple two-point path instead</button>`
-          : `${control({ label: 'Official cash rate to start', path: 'policy.start', min: 0, max: 8, step: 0.05, value: c.policy.start ?? 3.5, format: (v) => `${v.toFixed(2)}%` })}
-             ${control({ label: 'Official cash rate once settled', path: 'policy.end', min: 0, max: 8, step: 0.05, value: c.policy.end ?? 3.5, format: (v) => `${v.toFixed(2)}%` })}
+          : `${control({ label: `${t.policyRateLabel} to start`, path: 'policy.start', min: 0, max: 8, step: 0.05, value: c.policy.start ?? 4.4, format: (v) => `${v.toFixed(2)}%` })}
+             ${control({ label: `${t.policyRateLabel} once settled`, path: 'policy.end', min: 0, max: 8, step: 0.05, value: c.policy.end ?? 4.4, format: (v) => `${v.toFixed(2)}%` })}
              ${control({ label: 'Months to get there', path: 'policy.convergeMonths', min: 1, max: 36, step: 1, value: c.policy.convergeMonths ?? 12, format: (v) => `${v} month${v === 1 ? '' : 's'}` })}`
       }
       <label class="switch">
@@ -90,7 +129,7 @@ function renderControls() {
 
     <details class="panel-block">
       <summary><h2>Government bond purchases</h2></summary>
-      ${control({ label: 'Government bonds bought each month', path: 'govtPurchases.pace', min: 0, max: 5, step: 0.05, value: c.govtPurchases.pace, format: (v) => `NZ$${v.toFixed(2)}bn / month` })}
+      ${control({ label: 'Government bonds bought each month', path: 'govtPurchases.pace', min: 0, max: 300, step: 5, value: c.govtPurchases.pace, format: (v) => `${t.currency}${v.toFixed(0)}bn / month` })}
       ${control({ label: 'Purchase period (government)', path: 'govtPurchases.months', min: 0, max: 60, step: 1, value: c.govtPurchases.months, format: (v) => `${v} month${v === 1 ? '' : 's'}` })}
       ${control({
         label: 'Government bonds bought from non-banks',
@@ -100,19 +139,19 @@ function renderControls() {
         step: 0.05,
         value: c.govtPurchases.nonBankShare,
         format: (v) => `${Math.round(v * 100)}%`,
-        hint: `Only bonds sold by a non-bank create a deposit straight away. When a bank sells it swaps a bond for ${defineTerm('settlement-cash', 'reserves')} and no deposit exists — but the reserves do reach M2 eventually: the central bank now owns the bond, which compresses the ${defineTerm('term-premium', 'term premium')} and pulls lending rates down, so credit and deposits rise.`,
+        hint: `Only bonds sold by a non-bank create a deposit straight away. When a bank sells it swaps a bond for ${defineTerm('reserve-balances', 'reserves')} and no deposit exists — but the reserves do reach M2 eventually: the central bank now owns the bond, which compresses the ${defineTerm('term-premium', 'term premium')} and pulls lending rates down, so credit and deposits rise.`,
       })}
-      ${control({ label: 'Government bonds sold each month', path: 'govtSales.pace', min: 0, max: 3, step: 0.05, value: c.govtSales.pace, format: (v) => `NZ$${v.toFixed(2)}bn / month`, hint: `Selling bonds back — ${defineTerm('qt', 'quantitative tightening')} — drains settlement cash and shrinks the base.` })}
+      ${control({ label: 'Government bonds sold each month', path: 'govtSales.pace', min: 0, max: 200, step: 5, value: c.govtSales.pace, format: (v) => `${t.currency}${v.toFixed(0)}bn / month`, hint: `Selling bonds back — ${defineTerm('qt', 'quantitative tightening')} — drains ${t.reserves} and shrinks the base.` })}
       ${control({ label: 'Selling starts at month', path: 'govtSales.startMonth', min: 0, max: 96, step: 1, value: c.govtSales.startMonth, format: (v) => (v >= 96 ? 'not within window' : `month ${v}`) })}
     </details>
 
     <details class="panel-block">
       <summary><h2>Bank bonds and funding</h2></summary>
-      ${control({ label: 'Bank bonds bought each month', path: 'bankBondPurchases.pace', min: 0, max: 4, step: 0.05, value: c.bankBondPurchases.pace, format: (v) => `NZ$${v.toFixed(2)}bn / month` })}
+      ${control({ label: 'Bank bonds bought each month', path: 'bankBondPurchases.pace', min: 0, max: 200, step: 5, value: c.bankBondPurchases.pace, format: (v) => `${t.currency}${v.toFixed(0)}bn / month` })}
       ${control({ label: 'Purchase period (bank bonds)', path: 'bankBondPurchases.months', min: 0, max: 60, step: 1, value: c.bankBondPurchases.months, format: (v) => `${v} month${v === 1 ? '' : 's'}` })}
       ${control({ label: 'Bank bonds bought from non-banks', path: 'bankBondPurchases.nonBankShare', min: 0, max: 1, step: 0.05, value: c.bankBondPurchases.nonBankShare, format: (v) => `${Math.round(v * 100)}%` })}
-      ${control({ label: 'Cheap funding offered to banks', path: 'flp.total', min: 0, max: 40, step: 1, value: c.flp.total, format: (v) => `NZ$${v.toFixed(0)}bn`, hint: `Like the ${defineTerm('funding-for-lending', 'Funding for Lending Programme')}. It creates reserves but no deposits; it reaches M2 only through the lending rate — cheaper funding lowers the rate, which raises credit demand, and each new loan creates a deposit. Small lever, slow channel.` })}
-      ${control({ label: 'Cheap funding drawn over', path: 'flp.months', min: 0, max: 36, step: 1, value: c.flp.months, format: (v) => `${v} month${v === 1 ? '' : 's'}` })}
+      ${control({ label: 'Cheap funding offered to banks', path: 'fundingFacility.total', min: 0, max: 2000, step: 25, value: c.fundingFacility.total, format: (v) => `${t.currency}${v.toFixed(0)}bn`, hint: `Like the ${defineTerm('funding-facility', '${t.fundingFacility}')}. It creates reserves but no deposits; it reaches M2 only through the lending rate — cheaper funding lowers the rate, which raises credit demand, and each new loan creates a deposit. Small lever, slow channel.` })}
+      ${control({ label: 'Cheap funding drawn over', path: 'fundingFacility.months', min: 0, max: 36, step: 1, value: c.fundingFacility.months, format: (v) => `${v} month${v === 1 ? '' : 's'}` })}
     </details>
 
     <details class="panel-block">
@@ -125,12 +164,12 @@ function renderControls() {
         step: 0.01,
         value: c.fiscal.riskSensitivity ?? 0,
         format: (v) => (v === 0 ? 'off' : `${(v * 100).toFixed(0)}bp per point`),
-        hint: `Extra yield lenders demand for each point of debt above ${PARAMS.debtThresholdPct}% of GDP. Turning it on also puts the interest bill inside the deficit, so a larger debt stock borrows against itself. Above nominal growth the debt ratio compounds without limit.`,
+        hint: `Extra yield lenders demand for each point of debt above ${P.debtThresholdPct}% of GDP. Turning it on also puts the interest bill inside the deficit, so a larger debt stock borrows against itself. Above nominal growth the debt ratio compounds without limit.`,
       })}
-      ${control({ label: 'Government deficit', path: 'fiscal.deficitPctGdp', min: 0, max: 10, step: 0.5, value: c.fiscal.deficitPctGdp, format: (v) => `${v.toFixed(1)}% of GDP`, hint: `Bonds sold to the public swap a deposit for a bond, so the financing itself creates no deposit. Above the ${PARAMS.fiscalBaseline.toFixed(0)}%-of-GDP baseline the deficit also lifts demand, and the borrowing that follows does create deposits.` })}
+      ${control({ label: 'Government deficit', path: 'fiscal.deficitPctGdp', min: 0, max: 20, step: 0.5, value: c.fiscal.deficitPctGdp, format: (v) => `${v.toFixed(1)}% of GDP`, hint: `Bonds sold to the public swap a deposit for a bond, so the financing itself creates no deposit. Above the ${P.fiscalBaseline.toFixed(0)}%-of-GDP baseline the deficit also lifts demand, and the borrowing that follows does create deposits.` })}
       ${control({ label: 'Confidence', path: 'credit.confidence', min: 0.2, max: 1.6, step: 0.05, value: c.credit.confidence, format: (v) => `${Math.round(v * 100)}%` })}
-      ${control({ label: 'Lending restrictions (LVR / DTI)', path: 'credit.lvrTightness', min: 0, max: 1, step: 0.05, value: c.credit.lvrTightness, format: (v) => (v === 0 ? 'off' : `${Math.round(v * 100)}%`), hint: `Restrictions on high-${defineTerm('lvr', 'LVR')} or high-${defineTerm('dti', 'DTI')} lending. These slow credit without moving the policy rate.` })}
-      ${control({ label: 'Capital banks must hold', path: 'credit.capitalTarget', min: 0.1, max: 0.3, step: 0.005, value: c.credit.capitalTarget ?? PARAMS.capitalTarget, format: (v) => `${(v * 100).toFixed(1)}%`, hint: `Equity against ${defineTerm('risk-weighted-capital', 'risk-weighted assets')}. This is the binding constraint on lending.` })}
+      ${control({ label: `Lending restrictions (${t.macroRule})`, path: 'credit.creditTightness', min: 0, max: 1, step: 0.05, value: c.credit.creditTightness, format: (v) => (v === 0 ? 'off' : `${Math.round(v * 100)}%`), hint: `Restrictions on high-${defineTerm('lvr', 'LTV')} or high-${defineTerm('dti', 'DTI')} lending. These slow credit without moving the policy rate.` })}
+      ${control({ label: 'Capital banks must hold', path: 'credit.capitalTarget', min: 0.1, max: 0.3, step: 0.005, value: c.credit.capitalTarget ?? P.capitalTarget, format: (v) => `${(v * 100).toFixed(1)}%`, hint: `Equity against ${defineTerm('risk-weighted-capital', 'risk-weighted assets')}. This is the binding constraint on lending.` })}
       ${control({ label: "Savers' preference for term deposits", path: 'households.termPreference', min: -0.15, max: 0.25, step: 0.01, value: c.households.termPreference, format: (v) => signed(v * 100) + 'pp' })}
       ${control({
         label: 'Deposit rate discount',
@@ -140,7 +179,7 @@ function renderControls() {
         step: 0.05,
         value: c.deposits.margin,
         format: (v) => `${v.toFixed(2)}pp under market`,
-        hint: `How much the bank shaves off market rates when pricing term deposits. Past about ${PARAMS.depositConvenience.toFixed(1)}pp savers move money elsewhere, and the bank replaces it with ${defineTerm('wholesale-funding', 'wholesale funding')} at <span id="hint-wholesale">${openingWholesale.toFixed(2)}%</span>.`,
+        hint: `How much the bank shaves off market rates when pricing term deposits. Past about ${P.depositConvenience.toFixed(1)}pp savers move money elsewhere, and the bank replaces it with ${defineTerm('wholesale-funding', 'wholesale funding')} at <span id="hint-wholesale">${openingWholesale.toFixed(2)}%</span>.`,
       })}
     </details>
 
@@ -154,7 +193,7 @@ function renderControls() {
       ${
         state.compareOn
           ? `<select id="ctl-compare-scenario" class="select">
-              ${SCENARIOS.filter((s) => s.id !== state.scenarioId)
+              ${scenarios.filter((s) => s.id !== state.scenarioId)
                 .map((s) => `<option value="${s.id}" ${s.id === state.compareId ? 'selected' : ''}>${s.name}</option>`)
                 .join('')}
             </select>`
@@ -228,7 +267,7 @@ function formatFor(path, value) {
 
 function ensureCompareDistinct() {
   if (state.compareId === state.scenarioId) {
-    state.compareId = SCENARIOS.find((s) => s.id !== state.scenarioId)?.id ?? state.compareId;
+    state.compareId = scenariosFor(state.region).find((s) => s.id !== state.scenarioId)?.id ?? state.compareId;
   }
 }
 
@@ -265,7 +304,9 @@ function scheduleRender() {
 
 function refreshRuns() {
   runs.primary = run(state.config);
-  const compareCfg = state.compareOn ? getScenario(state.compareId).config : null;
+  const compareCfg = state.compareOn
+    ? { ...getScenario(state.compareId, state.region).config, region: state.region }
+    : null;
   runs.compare = compareCfg ? run(compareCfg) : null;
 }
 
@@ -281,7 +322,7 @@ function seriesFor(accessor, name, color, opts = {}) {
   ];
   if (runs.compare) {
     out.push({
-      name: `${name} · ${getScenario(state.compareId).name}`,
+      name: `${name} · ${getScenario(state.compareId, state.region).name}`,
       color,
       dashed: true,
       width: 1.6,
@@ -369,11 +410,11 @@ export const METRICS = [
   {
     key: 'm2',
     label: 'M2',
-    value: (c) => `NZ$${bn(c.last.m2)}bn`,
+    value: (c) => `${t.currency}${bn(c.last.m2)}bn`,
     sub: (c) =>
       `${growthPct(c.last.m2, c.prevYear.m2).toFixed(1)}% over the past year · ` +
-      `NZ$${Math.round(c.last.m2 / PARAMS.population)}k per person`,
-    compare: (c) => (c.cmp ? `vs NZ$${bn(c.cmp.m2)}bn in comparison` : ''),
+      `${t.currency}${Math.round(c.last.m2 / P.population)}k per person`,
+    compare: (c) => (c.cmp ? `vs ${t.currency}${bn(c.cmp.m2)}bn in comparison` : ''),
     detail: (c) => {
       const { credit, qe, retained, term } = decomposeM2(c.h);
       const total = c.last.m2 - c.start.m2;
@@ -381,7 +422,7 @@ export const METRICS = [
       return {
         title: 'M2 — money you can spend',
         definition:
-          `Currency in circulation plus transaction and on-call savings deposits: the money households and firms can spend without giving notice — about NZ$${Math.round(c.last.m2 / PARAMS.population)}k for every New Zealander. Every row below is a flow that adds to or subtracts from it.`,
+          `Currency in circulation plus transaction and on-call savings deposits: the money households and firms can spend without giving notice — about ${t.currency}${Math.round(c.last.m2 / P.population)}k for every ${t.citizen}. Every row below is a flow that adds to or subtracts from it.`,
         rows: [
           {
             label: 'New bank lending',
@@ -414,17 +455,17 @@ export const METRICS = [
             note: (() => {
               const dc = c.sum('dCurrency');
               const dir = dc >= 0 ? 'higher' : 'lower';
-              return `Currency demand ended NZ$${Math.abs(dc).toFixed(1)}bn ${dir} than it started, but a dollar moving between a deposit and a banknote is still M2. It shifts the monetary base instead.`;
+              return `Currency demand ended ${t.currency}${Math.abs(dc).toFixed(1)}bn ${dir} than it started, but a dollar moving between a deposit and a banknote is still M2. It shifts the monetary base instead.`;
             })(),
           },
         ],
         total: { label: 'Change in M2', value: flow(total) },
         reading: (() => {
           if (qe > 0.5) {
-            return `Of the NZ$${total.toFixed(1)}bn created over ${c.months} months, NZ$${credit.toFixed(1)}bn came from lending and NZ$${qe.toFixed(1)}bn from the purchase programme — about ${share.toFixed(0)}% of the total. Lending remains the dominant source even during a large asset purchase programme.`;
+            return `Of the ${t.currency}${total.toFixed(1)}bn created over ${c.months} months, ${t.currency}${credit.toFixed(1)}bn came from lending and ${t.currency}${qe.toFixed(1)}bn from the purchase programme — about ${share.toFixed(0)}% of the total. Lending remains the dominant source even during a large asset purchase programme.`;
           }
           if (qe < -0.5) {
-            return `The central bank sold bonds back over these ${c.months} months, which destroyed NZ$${Math.abs(qe).toFixed(1)}bn of deposits. Lending ${credit >= 0 ? 'added' : 'removed'} NZ$${Math.abs(credit).toFixed(1)}bn, leaving M2 NZ$${Math.abs(total).toFixed(1)}bn ${total >= 0 ? 'higher' : 'lower'}.`;
+            return `The central bank sold bonds back over these ${c.months} months, which destroyed ${t.currency}${Math.abs(qe).toFixed(1)}bn of deposits. Lending ${credit >= 0 ? 'added' : 'removed'} ${t.currency}${Math.abs(credit).toFixed(1)}bn, leaving M2 ${t.currency}${Math.abs(total).toFixed(1)}bn ${total >= 0 ? 'higher' : 'lower'}.`;
           }
           return 'With no bond operations in this run, M2 moved with bank lending and deposit behaviour alone.';
         })(),
@@ -434,9 +475,9 @@ export const METRICS = [
   {
     key: 'm3',
     label: 'M3',
-    value: (c) => `NZ$${bn(c.last.m3)}bn`,
+    value: (c) => `${t.currency}${bn(c.last.m3)}bn`,
     sub: (c) => `${signed(c.last.m3 - c.start.m3)}bn over the window`,
-    compare: (c) => (c.cmp ? `vs NZ$${bn(c.cmp.m3)}bn in comparison` : ''),
+    compare: (c) => (c.cmp ? `vs ${t.currency}${bn(c.cmp.m3)}bn in comparison` : ''),
     detail: (c) => {
       const credit = c.sum('dCredit');
       const qe = c.sum('dQeNonBank');
@@ -480,43 +521,43 @@ export const METRICS = [
             : []),
         ],
         total: { label: 'Change in M3', value: flow(total) },
-        reading: `M3 − M2 is NZ$${gap.toFixed(1)}bn of term deposits, ${termShare.toFixed(0)}% of all bank deposits. Because a shift between deposit types redistributes money rather than creating it, M3 is the cleaner measure of how much the banking system actually created.`,
+        reading: `M3 − M2 is ${t.currency}${gap.toFixed(1)}bn of term deposits, ${termShare.toFixed(0)}% of all bank deposits. Because a shift between deposit types redistributes money rather than creating it, M3 is the cleaner measure of how much the banking system actually created.`,
       };
     },
   },
   {
     key: 'base',
     label: 'Monetary base',
-    value: (c) => `NZ$${bn(c.last.base)}bn`,
+    value: (c) => `${t.currency}${bn(c.last.base)}bn`,
     sub: (c) => `${times(c.last.base / c.start.base)} the opening level`,
-    compare: (c) => (c.cmp ? `vs NZ$${bn(c.cmp.base)}bn in comparison` : ''),
+    compare: (c) => (c.cmp ? `vs ${t.currency}${bn(c.cmp.base)}bn in comparison` : ''),
     detail: (c) => {
       const purchases = c.sum('qeGovt') + c.sum('qeBankBonds');
-      const flp = c.sum('flpDraw');
-      const advances = (c.last.rbnzAdvances ?? 0) - (c.start.rbnzAdvances ?? 0);
+      const fundingFacility = c.sum('fundingDraw');
+      const advances = (c.last.cbAdvances ?? 0) - (c.start.cbAdvances ?? 0);
       const total = c.last.base - c.start.base;
       return {
         title: "Monetary base — what the central bank pays with",
         definition:
-          "Currency in circulation plus the settlement cash banks keep at the Reserve Bank. It is the central bank's own liability, so only the central bank's operations can change it.",
+          `Currency in circulation plus the ${t.reserves} banks keep at the ${t.centralBank}. It is the central bank's own liability, so only the central bank's operations can change it.`,
         rows: [
           {
             label: 'Bond purchases',
             value: flow(purchases),
             kind: kindOf(purchases),
-            note: 'Paid for by crediting the seller’s bank with settlement cash. The base rises by the full amount, whoever sold.',
+            note: `Paid for by crediting the seller’s bank with ${t.reserves}. The base rises by the full amount, whoever sold.`,
           },
           {
             label: 'Cheap funding drawn',
-            value: flow(flp),
-            kind: kindOf(flp),
-            note: 'Funding-for-Lending style lending also creates reserves.',
+            value: flow(fundingFacility),
+            kind: kindOf(fundingFacility),
+            note: 'Central-bank funding also creates reserves.',
           },
           {
             label: 'Standing facility advances',
             value: flow(advances),
             kind: kindOf(advances),
-            note: 'Reserves borrowed against collateral when settlement cash would otherwise go negative.',
+            note: 'Reserves borrowed against collateral when the balance would otherwise go negative.',
           },
           {
             label: 'Notes and coins',
@@ -529,15 +570,15 @@ export const METRICS = [
         reading: (() => {
           const head = "The base is set by the central bank's own operations, not by how much banks want to lend.";
           const sources = [];
-          if (Math.abs(purchases) > 0.05) sources.push(`NZ$${purchases.toFixed(1)}bn of net asset purchases`);
-          if (Math.abs(flp) > 0.05) sources.push(`NZ$${flp.toFixed(1)}bn drawn under the funding facility`);
-          if (Math.abs(advances) > 0.05) sources.push(`NZ$${advances.toFixed(1)}bn of standing-facility advances`);
+          if (Math.abs(purchases) > 0.05) sources.push(`${t.currency}${purchases.toFixed(1)}bn of net asset purchases`);
+          if (Math.abs(fundingFacility) > 0.05) sources.push(`${t.currency}${fundingFacility.toFixed(1)}bn drawn under the funding facility`);
+          if (Math.abs(advances) > 0.05) sources.push(`${t.currency}${advances.toFixed(1)}bn of standing-facility advances`);
           if (!sources.length) {
             return `${head} There were no central bank operations in this window, so the base did not move.`;
           }
           const joined =
             sources.length === 1 ? sources[0] : `${sources.slice(0, -1).join(', ')} and ${sources.at(-1)}`;
-          return `${head} The ${total >= 0 ? 'rise' : 'fall'} of NZ$${Math.abs(total).toFixed(1)}bn came from ${joined}.`;
+          return `${head} The ${total >= 0 ? 'rise' : 'fall'} of ${t.currency}${Math.abs(total).toFixed(1)}bn came from ${joined}.`;
         })(),
       };
     },
@@ -560,13 +601,13 @@ export const METRICS = [
         rows: [
           {
             label: 'M2',
-            value: `NZ$${c.start.m2.toFixed(0)}bn → NZ$${c.last.m2.toFixed(0)}bn`,
+            value: `${t.currency}${c.start.m2.toFixed(0)}bn → ${t.currency}${c.last.m2.toFixed(0)}bn`,
             kind: 'level',
             note: `${pc(m2g)} over the window.`,
           },
           {
             label: 'Monetary base',
-            value: `NZ$${c.start.base.toFixed(1)}bn → NZ$${c.last.base.toFixed(1)}bn`,
+            value: `${t.currency}${c.start.base.toFixed(1)}bn → ${t.currency}${c.last.base.toFixed(1)}bn`,
             kind: 'level',
             note: `${pc(basG)} over the window.`,
           },
@@ -584,20 +625,22 @@ export const METRICS = [
   },
   {
     key: 'settlement',
-    label: 'Settlement cash',
-    value: (c) => `NZ$${bn(c.last.settlementCash)}bn`,
-    sub: (c) => `${times(c.last.settlementCash / c.start.settlementCash)} the opening level`,
-    compare: (c) => (c.cmp ? `vs NZ$${bn(c.cmp.settlementCash)}bn in comparison` : ''),
+    get label() {
+      return t.reservesLabel;
+    },
+    value: (c) => `${t.currency}${bn(c.last.reserves)}bn`,
+    sub: (c) => `${times(c.last.reserves / c.start.reserves)} the opening level`,
+    compare: (c) => (c.cmp ? `vs ${t.currency}${bn(c.cmp.reserves)}bn in comparison` : ''),
     detail: (c) => {
       const purchases = c.sum('qeGovt') + c.sum('qeBankBonds');
-      const flp = c.sum('flpDraw');
-      const advances = (c.last.rbnzAdvances ?? 0) - (c.start.rbnzAdvances ?? 0);
+      const fundingFacility = c.sum('fundingDraw');
+      const advances = (c.last.cbAdvances ?? 0) - (c.start.cbAdvances ?? 0);
       const currency = c.last.currency - c.start.currency;
-      const total = c.last.settlementCash - c.start.settlementCash;
+      const total = c.last.reserves - c.start.reserves;
       return {
-        title: 'Settlement cash — reserves, by another name',
+        title: `${t.reservesLabel} — the ${t.centralBank}’s own liability`,
         definition:
-          'Reserves banks hold at the Reserve Bank to settle payments with each other and with the Crown. New Zealand has had no reserve requirement since 1985, so these balances are supplied on demand.',
+          `Reserves banks hold at the ${t.centralBank} to settle payments with each other, with the ${t.government} and with the ${t.centralBank} itself. ${t.reserveHistory}, and the ${t.centralBank} pays interest on these balances, so they are supplied on demand rather than rationed.`,
         rows: [
           {
             label: 'Credited from bond purchases',
@@ -607,8 +650,8 @@ export const METRICS = [
           },
           {
             label: 'Cheap funding drawn',
-            value: flow(flp),
-            kind: kindOf(flp),
+            value: flow(fundingFacility),
+            kind: kindOf(fundingFacility),
             note: 'The facility lends reserves directly to banks.',
           },
           {
@@ -621,26 +664,26 @@ export const METRICS = [
             label: 'Less currency issued',
             value: flow(-currency),
             kind: kindOf(-currency),
-            note: 'Banknotes are funded by draining settlement cash — the public swapping deposits for cash.',
+            note: `Banknotes are funded by draining ${t.reserves} — the public swapping deposits for cash.`,
           },
         ],
-        total: { label: 'Change in settlement cash', value: flow(total) },
-        reading: `Now ${times(c.last.settlementCash / c.start.settlementCash)} the opening level, earning the OCR and funding nothing. This is the money the purchase programme actually created — and it is not M2.`,
+        total: { label: `Change in ${t.reserves}`, value: flow(total) },
+        reading: `Now ${times(c.last.reserves / c.start.reserves)} the opening level, earning the policy rate and funding nothing. This is the money the purchase programme actually created — and it is not M2.`,
       };
     },
   },
   {
     key: 'credit',
     label: 'Bank credit',
-    value: (c) => `NZ$${bn(c.last.loansTotal)}bn`,
+    value: (c) => `${t.currency}${bn(c.last.loansTotal)}bn`,
     sub: (c) => `${signed(c.last.loansTotal - c.start.loansTotal)}bn over the window`,
-    compare: (c) => (c.cmp ? `vs NZ$${bn(c.cmp.loansTotal)}bn in comparison` : ''),
+    compare: (c) => (c.cmp ? `vs ${t.currency}${bn(c.cmp.loansTotal)}bn in comparison` : ''),
     detail: (c) => {
       const dH = c.last.loansHousing - c.start.loansHousing;
       const dB = c.last.loansBusiness - c.start.loansBusiness;
       const dC = c.last.loansConsumer - c.start.loansConsumer;
       const total = dH + dB + dC;
-      const ocrMoved = Math.abs(c.last.ocr - c.start.ocr) > 0.01;
+      const ocrMoved = Math.abs(c.last.policyRate - c.start.policyRate) > 0.01;
       const mortFall = c.start.mortgage - c.last.mortgage;
       return {
         title: 'Bank credit — the asset that makes the money',
@@ -651,47 +694,51 @@ export const METRICS = [
             label: 'Housing',
             value: flow(dH),
             kind: kindOf(dH),
-            note: `Now NZ$${c.last.loansHousing.toFixed(0)}bn, growing ${growthPct(c.last.loansHousing, c.start.loansHousing).toFixed(1)}% over the window.`,
+            note: `Now ${t.currency}${c.last.loansHousing.toFixed(0)}bn, growing ${growthPct(c.last.loansHousing, c.start.loansHousing).toFixed(1)}% over the window.`,
           },
           {
             label: 'Business',
             value: flow(dB),
             kind: kindOf(dB),
-            note: `Now NZ$${c.last.loansBusiness.toFixed(0)}bn, growing ${growthPct(c.last.loansBusiness, c.start.loansBusiness).toFixed(1)}%.`,
+            note: `Now ${t.currency}${c.last.loansBusiness.toFixed(0)}bn, growing ${growthPct(c.last.loansBusiness, c.start.loansBusiness).toFixed(1)}%.`,
           },
           {
             label: 'Consumer',
             value: flow(dC),
             kind: kindOf(dC),
-            note: `Now NZ$${c.last.loansConsumer.toFixed(0)}bn, growing ${growthPct(c.last.loansConsumer, c.start.loansConsumer).toFixed(1)}%.`,
+            note: `Now ${t.currency}${c.last.loansConsumer.toFixed(0)}bn, growing ${growthPct(c.last.loansConsumer, c.start.loansConsumer).toFixed(1)}%.`,
           },
         ],
         total: { label: 'Change in credit', value: flow(total) },
         reading:
           !ocrMoved && mortFall > 0.05
-            ? `The OCR never moved, yet the mortgage rate fell ${mortFall.toFixed(2)}pp because the purchases compressed the term premium. Part of this credit growth therefore came from the purchase programme reaching the money stock through lending rates rather than directly.`
+            ? `The ${t.policyRate} never moved, yet the mortgage rate fell ${mortFall.toFixed(2)}pp because the purchases compressed the term premium. Part of this credit growth therefore came from the purchase programme reaching the money stock through lending rates rather than directly.`
             : `Credit grew ${growthPct(c.last.loansTotal, c.start.loansTotal).toFixed(1)}% over the window, and that is what moved the money stock. The rate works by changing how much credit is worth taking on.`,
       };
     },
   },
   {
-    key: 'ocr',
-    label: 'OCR',
-    value: (c) => `${c.last.ocr.toFixed(2)}%`,
+    key: 'policyRate',
+    get label() {
+      return t.policyRateLabel;
+    },
+    value: (c) => `${c.last.policyRate.toFixed(2)}%`,
     sub: (c) => `mortgage rate ${c.last.mortgage.toFixed(2)}%`,
     compare: () => '',
     detail: (c) => {
-      const holdings = c.last.rbnzGovtBonds + c.last.rbnzBankBonds;
+      const holdings = c.last.cbGovtBonds + c.last.cbBankBonds;
       const compression = c.last.qeCompression;
       const subsidy = c.last.fundingSubsidy;
       return {
-        title: 'OCR — the policy rate',
+        title: `${t.policyRateLabel} — the policy rate`,
         definition:
-          "The official cash rate: the Reserve Bank's policy rate, and the rate it pays on settlement cash balances. It reaches M2 indirectly, by changing the price of credit.",
+          `The ${t.centralBank}'s policy rate, and the rate it pays on ${t.reserves}. The ${t.centralBank} sets a price for reserves rather than a quantity, so this reaches M2 indirectly — by changing the price of credit.`,
         rows: [
           {
-            label: 'OCR',
-            value: `${c.start.ocr.toFixed(2)}% → ${c.last.ocr.toFixed(2)}%`,
+            get label() {
+      return t.policyRateLabel;
+    },
+            value: `${c.start.policyRate.toFixed(2)}% → ${c.last.policyRate.toFixed(2)}%`,
             kind: 'level',
             note: 'Set directly, or by the Taylor rule when autopilot is on.',
           },
@@ -699,17 +746,17 @@ export const METRICS = [
             label: 'Wholesale funding rate',
             value: `${c.last.wholesale.toFixed(2)}%`,
             kind: 'level',
-            note: `OCR plus a ${PARAMS.termPremium.toFixed(2)}pp ${defineTerm('term-premium', 'term premium')}${
+            note: `The ${t.policyRate} plus a ${P.termPremium.toFixed(2)}pp ${defineTerm('term-premium', 'term premium')}${
               c.last.riskPremium > 0.015
                 ? ` and ${c.last.riskPremium.toFixed(2)}pp of debt risk`
                 : ''
-            }, less ${compression.toFixed(2)}pp compressed by NZ$${holdings.toFixed(0)}bn of central bank holdings.`,
+            }, less ${compression.toFixed(2)}pp compressed by ${t.currency}${holdings.toFixed(0)}bn of central bank holdings.`,
           },
           {
             label: 'Mortgage rate',
             value: `${c.last.mortgage.toFixed(2)}%`,
             kind: 'level',
-            note: 'Half the OCR and half wholesale funding, plus the bank margin.',
+            note: 'Half the policy rate and half wholesale funding, plus the bank margin.',
           },
           {
             label: 'Term deposit rate',
@@ -717,13 +764,13 @@ export const METRICS = [
             kind: 'level',
             note: `What savers are offered, priced ${c.cfg.deposits.margin.toFixed(2)}pp below the funding benchmark.`,
           },
-          ...(c.last.rbnzFlp > 0.05
+          ...(c.last.cbFunding > 0.05
             ? [
                 {
                   label: 'Funding facility subsidy',
                   value: `−${(subsidy * 100).toFixed(0)}bp`,
                   kind: 'sub',
-                  note: `NZ$${c.last.rbnzFlp.toFixed(0)}bn drawn, passed through as ${subsidy.toFixed(2)}pp off
+                  note: `${t.currency}${c.last.cbFunding.toFixed(0)}bn drawn, passed through as ${subsidy.toFixed(2)}pp off
                     business lending rates and ${(subsidy * 0.3).toFixed(2)}pp off mortgages. That rate cut is the
                     only route from the facility to M2 — the facility itself creates no deposits.`,
                 },
@@ -735,7 +782,7 @@ export const METRICS = [
                   label: 'Debt risk premium',
                   value: `+${c.last.riskPremium.toFixed(2)}pp`,
                   kind: 'add',
-                  note: `Debt at ${c.last.debtRatio.toFixed(0)}% of GDP against a ${PARAMS.debtThresholdPct}% threshold. This sits inside the deficit too, so a bigger debt stock raises its own interest bill.`,
+                  note: `Debt at ${c.last.debtRatio.toFixed(0)}% of GDP against a ${P.debtThresholdPct}% threshold. This sits inside the deficit too, so a bigger debt stock raises its own interest bill.`,
                 },
               ]
             : []),
@@ -749,16 +796,16 @@ export const METRICS = [
                 : 'Term deposits beat this, so balances stay. This is the floor under how cheaply the bank can price them.',
           },
         ],
-        total: { label: 'Mortgage − OCR', value: `${(c.last.mortgage - c.last.ocr).toFixed(2)}pp` },
+        total: { label: 'Mortgage − policy rate', value: `${(c.last.mortgage - c.last.policyRate).toFixed(2)}pp` },
         reading: (() => {
-          if ((c.cfg.fiscal.riskSensitivity ?? 0) > 0 && c.last.wholesale > PARAMS.gdpNominalGrowth) {
-            return `Lenders are charging ${c.last.riskPremium.toFixed(2)}pp on debt at ${c.last.debtRatio.toFixed(0)}% of GDP, which puts the long rate at ${c.last.wholesale.toFixed(2)}% — above nominal growth of ${PARAMS.gdpNominalGrowth.toFixed(1)}%. At that spread the debt ratio compounds upward on its own, and nothing in this model pulls it back.`;
+          if ((c.cfg.fiscal.riskSensitivity ?? 0) > 0 && c.last.wholesale > P.gdpNominalGrowth) {
+            return `Lenders are charging ${c.last.riskPremium.toFixed(2)}pp on debt at ${c.last.debtRatio.toFixed(0)}% of GDP, which puts the long rate at ${c.last.wholesale.toFixed(2)}% — above nominal growth of ${P.gdpNominalGrowth.toFixed(1)}%. At that spread the debt ratio compounds upward on its own, and nothing in this model pulls it back.`;
           }
           if (c.last.riskPremium > 0.015) {
-            return `Debt at ${c.last.debtRatio.toFixed(0)}% of GDP is adding ${c.last.riskPremium.toFixed(2)}pp to the long rate, while NZ$${holdings.toFixed(0)}bn of central bank holdings takes ${compression.toFixed(2)}pp off it. The two partly cancel — and the debt risk is also inside the deficit, so it borrows against itself.`;
+            return `Debt at ${c.last.debtRatio.toFixed(0)}% of GDP is adding ${c.last.riskPremium.toFixed(2)}pp to the long rate, while ${t.currency}${holdings.toFixed(0)}bn of central bank holdings takes ${compression.toFixed(2)}pp off it. The two partly cancel — and the debt risk is also inside the deficit, so it borrows against itself.`;
           }
-          if (Math.abs(c.last.ocr - c.start.ocr) < 0.01) {
-            return `The OCR never moved in this run, so the only thing that changed in the rate structure was ${compression.toFixed(2)}pp of term-premium compression from NZ$${holdings.toFixed(0)}bn of central bank holdings. That is how a purchase programme reaches lending rates without touching the policy rate.`;
+          if (Math.abs(c.last.policyRate - c.start.policyRate) < 0.01) {
+            return `The ${t.policyRate} never moved in this run, so the only thing that changed in the rate structure was ${compression.toFixed(2)}pp of term-premium compression from ${t.currency}${holdings.toFixed(0)}bn of central bank holdings. That is how a purchase programme reaches lending rates without touching the policy rate.`;
           }
           return 'A rate cut raises M2 only if it persuades someone to borrow. That is why the rate channel is usually larger than the purchase channel — but slower, and dependent on borrowers showing up.';
         })(),
@@ -788,7 +835,7 @@ export const METRICS = [
             label: 'M2 growth, last 12 months',
             value: `${yoyGrowth.toFixed(1)}%`,
             kind: 'level',
-            note: `Money growth above the ${PARAMS.moneyGrowthReference}% reference adds to inflation; below it subtracts.`,
+            note: `Money growth above the ${P.moneyGrowthReference}% reference adds to inflation; below it subtracts.`,
           },
           {
             label: 'Expected inflation',
@@ -798,7 +845,7 @@ export const METRICS = [
           },
           {
             label: 'Target',
-            value: `${PARAMS.inflationTarget.toFixed(2)}%`,
+            value: `${P.inflationTarget.toFixed(2)}%`,
             kind: 'level',
             note: 'The midpoint the model treats as neutral.',
           },
@@ -815,10 +862,11 @@ export const METRICS = [
  * each one names the thing that is about to happen before it happens.
  */
 export const START_HINTS = {
-  neutral:
-    'Nothing moves here, by design — this is the control case. Try <b>Bond purchases only</b> next: the Reserve Bank creates a great deal of reserves and comparatively little money.',
+  get neutral() {
+    return `Nothing moves here, by design — this is the control case. Try <b>Bond purchases only</b> next: the ${t.centralBank} creates a great deal of reserves and comparatively little money.`;
+  },
   covid:
-    'Everything at once: deep cuts, bond purchases, cheap bank funding and a large deficit, then the fastest tightening since the OCR began. Use the compare switch to hold it against the control case.',
+    'Everything at once: deep cuts, bond purchases, cheap bank funding and a large deficit, then the fastest tightening since the Volcker era. Use the compare switch to hold it against the control case.',
   'qe-only':
     'Watch the monetary base outrun M2. The multiplier collapses because buying bonds from banks mostly swaps one asset for another. Compare it with <b>Rate cuts only</b>.',
   'rates-only':
@@ -860,7 +908,7 @@ function renderKpis() {
 
   el('kpi-compare-note').innerHTML = c.cmp
     ? `Comparing with <b>${getScenario(state.compareId).name}</b>. That scenario ends with M2 at
-       NZ$<b>${bn(c.cmp.m2)}bn</b> — NZ$${Math.abs(c.last.m2 - c.cmp.m2).toFixed(1)}bn
+       ${t.currency}<b>${bn(c.cmp.m2)}bn</b> — ${t.currency}${Math.abs(c.last.m2 - c.cmp.m2).toFixed(1)}bn
        ${c.last.m2 >= c.cmp.m2 ? 'higher' : 'lower'} than this one.`
     : '';
 
@@ -908,8 +956,74 @@ function renderKpiDetail(c = metricContext()) {
 }
 
 function applyChart(key, factory, mountId, spec) {
-  if (!charts[key]) charts[key] = factory(el(mountId), spec);
+  const mount = el(mountId);
+  // A missing mount means the markup and the scripts are from different builds.
+  // Skip the chart rather than throwing and leaving the rest of the page blank.
+  if (!mount) {
+    console.warn(`[charts] no #${mountId} on the page; skipping "${key}"`);
+    return;
+  }
+  if (!charts[key]) charts[key] = factory(mount, spec);
   else charts[key].update(spec);
+}
+
+/**
+ * The historical chart does not depend on the model at all: it is the evidence the
+ * model is arguing about, fixed to complete calendar years.
+ */
+function renderLongRun() {
+  const h = createHistory(state.region);
+  const money = h.moneyLabel;
+  const years = h.years;
+
+  applyChart('longrun', lineChart, 'chart-longrun', {
+    series: [
+      { name: money, color: COLORS.m2, width: 2.6, points: h.indexed('m2') },
+      { name: 'Consumer prices', color: COLORS.rates, points: h.indexed('cpi') },
+      { name: `Gold, ${t.goldUnit}`, color: COLORS.base, points: h.indexed('gold') },
+      { name: 'Real GDP', color: COLORS.credit, points: h.indexed('rgdp') },
+      {
+        name: `${money} ÷ real GDP`,
+        color: COLORS.m3,
+        dashed: true,
+        width: 1.8,
+        points: h.impliedPriceLevel(),
+      },
+    ],
+    xTicks: [...years.filter((y) => y % 5 === 0), years.at(-1)].map((y) => y - BASE_YEAR),
+    xFormat: (v) => String(BASE_YEAR + v),
+    yFormat: (v) => v.toFixed(0),
+    height: 300,
+  });
+
+  const blurb = el('longrun-blurb');
+  if (blurb) {
+    const moneyHtml = h.moneyTerm ? defineTerm(h.moneyTerm, money) : money;
+    blurb.innerHTML = `Gold, consumer prices, ${moneyHtml} and real GDP for ${h.label}, each indexed to 100 in ${BASE_YEAR}. The dashed line is what the quantity equation implies if velocity never moved: ${money} ÷ real GDP.`;
+  }
+
+  const f = (v) => v.toFixed(1);
+  const r = (v) => (Number.isFinite(v) ? v.toFixed(2).replace('-', '−') : '—');
+  const implied = h.multipleOf('m2') / h.multipleOf('rgdp');
+  const gap = Math.round((1 - h.multipleOf('cpi') / implied) * 100);
+  const goldRatio = h.multipleOf('gold') / h.multipleOf('cpi');
+  const goldVsPrices =
+    Math.abs(goldRatio - 1) < 0.15
+      ? `within ${Math.abs(Math.round((goldRatio - 1) * 100))}% of consumer prices`
+      : `${goldRatio > 1 ? 'ahead of' : 'behind'} consumer prices`;
+  const levels = correlation(
+    h.rows.map((row) => Math.log(row[3])),
+    h.rows.map((row) => Math.log(row[2])),
+  );
+
+  const moneyHtml = h.moneyTerm ? defineTerm(h.moneyTerm, money) : money;
+  el('longrun-note').innerHTML = `${moneyHtml} grew <b>${f(h.multipleOf('m2'))}×</b> in ${h.label} while
+    consumer prices grew <b>${f(h.multipleOf('cpi'))}×</b>. Real GDP grew
+    <b>${f(h.multipleOf('rgdp'))}×</b>, so money growth in excess of real growth — the dashed line — rose
+    <b>${f(implied)}×</b>, ${gap}% above actual inflation. Gold grew <b>${f(h.multipleOf('gold'))}×</b>,
+    ${goldVsPrices} — but nothing like ${money}, which grew <b>${f(h.multipleOf('m2'))}×</b>. The gap
+    between the dashed line and consumer prices is velocity, and velocity drifted down over the period. The correlation between the two log levels is
+    <b>${r(levels)}</b> — but both series trend upward, so that number is mostly the shared trend.`;
 }
 
 function renderCharts() {
@@ -928,7 +1042,7 @@ function renderCharts() {
   applyChart('base', lineChart, 'chart-base', {
     series: [
       ...seriesFor((r) => r.base, 'Monetary base', COLORS.base, { width: 2.2 }),
-      ...seriesFor((r) => r.settlementCash, 'Settlement cash', COLORS.deposit),
+      ...seriesFor((r) => r.reserves, t.reservesLabel, COLORS.deposit),
     ],
     yFormat: (v) => `$${v.toFixed(0)}`,
     xFormat: monthLabel,
@@ -946,7 +1060,7 @@ function renderCharts() {
 
   applyChart('rates', lineChart, 'chart-rates', {
     series: [
-      ...seriesFor((r) => r.ocr, 'OCR', COLORS.ink, { width: 2.2 }),
+      ...seriesFor((r) => r.policyRate, t.policyRateLabel, COLORS.ink, { width: 2.2 }),
       ...seriesFor((r) => r.mortgage, 'Mortgage rate', COLORS.rates),
       ...seriesFor((r) => r.termRate, 'Term deposit rate', COLORS.deposit),
     ],
@@ -989,22 +1103,22 @@ function renderCharts() {
     height: 210,
   });
 
-  applyChart('rbnz', stackedArea, 'chart-rbnz', {
-    title: 'Central bank holdings, NZ$ billions',
+  applyChart('fed', stackedArea, 'chart-fed', {
+    title: `Central bank holdings, ${t.currency} billions`,
     layers: [
       {
         name: 'Government bonds',
-        points: runs.primary.history.map((r) => [r.month, r.rbnzGovtBonds]),
+        points: runs.primary.history.map((r) => [r.month, r.cbGovtBonds]),
         color: COLORS.layers[0],
       },
       {
         name: 'Bank bonds',
-        points: runs.primary.history.map((r) => [r.month, r.rbnzBankBonds]),
+        points: runs.primary.history.map((r) => [r.month, r.cbBankBonds]),
         color: COLORS.layers[1],
       },
       {
-        name: 'Funding for lending',
-        points: runs.primary.history.map((r) => [r.month, r.rbnzFlp]),
+        name: 'Funding facility',
+        points: runs.primary.history.map((r) => [r.month, r.cbFunding]),
         color: COLORS.layers[2],
       },
     ],
@@ -1032,7 +1146,7 @@ function renderWaterfall() {
       { label: 'Shift into term deposits', value: term, kind: 'add' },
       { label: 'Change in M2', value: total, kind: 'total' },
     ],
-    yFormat: (v) => `NZ$${signed(v)}bn`,
+    yFormat: (v) => `${t.currency}${signed(v)}bn`,
     yAxisFormat: (v) => (Math.abs(v) < 0.05 ? '0' : `${v > 0 ? '+' : '−'}${Math.abs(v).toFixed(0)}`),
     height: 230,
   });
@@ -1049,13 +1163,13 @@ function renderWaterfall() {
         100
       : 0;
 
-  let note = `Over ${history.length - 1} months M2 changed by <b>NZ$${signed(total)}bn</b>. `;
+  let note = `Over ${history.length - 1} months M2 changed by <b>${t.currency}${signed(total)}bn</b>. `;
   if (Math.abs(totalQe) > 0.5) {
     const dealing = totalQe >= 0 ? 'bought' : 'sold';
-    note += `The central bank ${dealing} <b>NZ$${Math.abs(totalQe).toFixed(1)}bn</b> of bonds. Only
-      <b>NZ$${Math.abs(qe).toFixed(1)}bn</b> (${Math.abs(effectiveNonBank).toFixed(0)}%) was
+    note += `The central bank ${dealing} <b>${t.currency}${Math.abs(totalQe).toFixed(1)}bn</b> of bonds. Only
+      <b>${t.currency}${Math.abs(qe).toFixed(1)}bn</b> (${Math.abs(effectiveNonBank).toFixed(0)}%) was
       ${totalQe >= 0 ? 'sold by non-banks and therefore created' : 'bought from non-banks and therefore destroyed'}
-      deposits; the other <b>NZ$${Math.abs(unmonetised).toFixed(1)}bn</b> simply swapped bonds for settlement
+      deposits; the other <b>${t.currency}${Math.abs(unmonetised).toFixed(1)}bn</b> simply swapped bonds for settlement
       cash on bank balance sheets.`;
     if (Math.abs(effectiveNonBank) > requestedNonBank + 5) {
       note += ` That is higher than the ${requestedNonBank.toFixed(0)}% you asked for: the banking sector can
@@ -1065,10 +1179,10 @@ function renderWaterfall() {
     // The bank-sourced slice creates no deposit, but it is not inert: the central
     // bank now owns those bonds, which compresses the term premium.
     const last = history.at(-1);
-    const holdings = last.rbnzGovtBonds + last.rbnzBankBonds;
+    const holdings = last.cbGovtBonds + last.cbBankBonds;
     const compression = last.qeCompression;
     if (Math.abs(unmonetised) > 1 && compression > 0.05) {
-      note += ` The bank-sourced slice is not inert, though: with NZ$${holdings.toFixed(0)}bn of holdings the
+      note += ` The bank-sourced slice is not inert, though: with ${t.currency}${holdings.toFixed(0)}bn of holdings the
         ${defineTerm('term-premium', 'term premium')} is compressed by ${compression.toFixed(2)}pp, which is why
         wholesale funding costs ${last.wholesale.toFixed(2)}% rather than
         ${(last.wholesale + compression).toFixed(2)}%. That flows into lending rates, then credit, then deposits.`;
@@ -1091,15 +1205,15 @@ function renderCreditMix() {
     ],
     yFormat: (v) => `$${v.toFixed(0)}`,
     xFormat: (m) => `month ${m}`,
-    title: 'Bank credit by borrower, NZ$ billions',
+    title: `Bank credit by borrower, ${t.currency} billions`,
     height: 230,
   });
 
   const mix = creditMix(history);
   const drift = mix.housingShare - mix.openingHousingShare;
   const trend = drift > 0.5 ? 'crept up' : drift < -0.5 ? 'eased' : 'barely moved';
-  el('credit-note').innerHTML = `Mortgages are <b>NZ$${mix.last.housing.toFixed(0)}bn</b> of the
-    <b>NZ$${mix.last.total.toFixed(0)}bn</b> of bank credit (${mix.housingShare.toFixed(0)}%), and their
+  el('credit-note').innerHTML = `Mortgages are <b>${t.currency}${mix.last.housing.toFixed(0)}bn</b> of the
+    <b>${t.currency}${mix.last.total.toFixed(0)}bn</b> of bank credit (${mix.housingShare.toFixed(0)}%), and their
     share ${trend} over the window. Lending is the largest single source of new money, so the mortgage
     rate does most of the work here.`;
 }
@@ -1114,7 +1228,7 @@ function renderInsight() {
 
   if (baseChange > 20 && Math.abs(m2Change) < baseChange * 0.8) {
     parts.push(
-      `The monetary base rose <b>${signed(baseChange)}bn</b> — ${(last.base / start.base).toFixed(1)}× — while M2 rose only <b>${signed(m2Change)}bn</b>. Reserves are the by-product of the bond purchases, not fuel for lending: there is no reserve requirement to relax, and banks create deposits when they lend, not when they have spare settlement cash.`,
+      `The monetary base rose <b>${signed(baseChange)}bn</b> — ${(last.base / start.base).toFixed(1)}× — while M2 rose only <b>${signed(m2Change)}bn</b>. Reserves are the by-product of the bond purchases, not fuel for lending: there is no reserve requirement to relax, and banks create deposits when they lend, not when they hold spare reserves.`,
     );
   }
 
@@ -1133,14 +1247,14 @@ function renderInsight() {
 
   if ((state.config.fiscal.riskSensitivity ?? 0) > 0) {
     parts.push(
-      last.wholesale > PARAMS.gdpNominalGrowth
-        ? `Debt at <b>${last.debtRatio.toFixed(0)}%</b> of GDP has pushed the long rate to <b>${last.wholesale.toFixed(2)}%</b>, above nominal growth of ${PARAMS.gdpNominalGrowth.toFixed(1)}%. The debt ratio is now compounding on itself — there is no stable level for it to settle at.`
+      last.wholesale > P.gdpNominalGrowth
+        ? `Debt at <b>${last.debtRatio.toFixed(0)}%</b> of GDP has pushed the long rate to <b>${last.wholesale.toFixed(2)}%</b>, above nominal growth of ${P.gdpNominalGrowth.toFixed(1)}%. The debt ratio is now compounding on itself — there is no stable level for it to settle at.`
         : `Debt at <b>${last.debtRatio.toFixed(0)}%</b> of GDP adds <b>${last.riskPremium.toFixed(2)}pp</b> to the long rate, and the interest on it is inside the deficit.`,
     );
   }
 
   parts.push(
-    `Lending rates are at ${last.mortgage.toFixed(2)}% against an OCR of ${last.ocr.toFixed(2)}%, and the real mortgage rate is ${(last.mortgage - last.expectedInflation).toFixed(2)}%.`,
+    `Lending rates are at ${last.mortgage.toFixed(2)}% against a ${t.policyRate} of ${last.policyRate.toFixed(2)}%, and the real mortgage rate is ${(last.mortgage - last.expectedInflation).toFixed(2)}%.`,
   );
 
   el('insight').innerHTML = parts.join(' ');
@@ -1154,7 +1268,7 @@ function renderAccountsPanel() {
   el('account-month-label').textContent = month === 0 ? 'opening balance sheet' : `month ${month}`;
   el('account-slider').max = String(months);
   el('account-slider').value = String(month);
-  renderAccounts(el('accounts'), snapshot);
+  renderAccounts(el('accounts'), snapshot, state.region);
 }
 
 /**
@@ -1164,10 +1278,10 @@ function renderAccountsPanel() {
  * adds, not through the financing.
  */
 function fiscalCreditText() {
-  if (Math.abs(state.config.fiscal.deficitPctGdp - PARAMS.fiscalBaseline) < 1e-9) return '0.0';
+  if (Math.abs(state.config.fiscal.deficitPctGdp - P.fiscalBaseline) < 1e-9) return '0.0';
   const counterfactual = run({
     ...state.config,
-    fiscal: { ...state.config.fiscal, deficitPctGdp: PARAMS.fiscalBaseline },
+    fiscal: { ...state.config.fiscal, deficitPctGdp: P.fiscalBaseline },
   }).history;
   const history = runs.primary.history;
   const diff = history.at(-1).m2 - counterfactual.at(-1).m2;
@@ -1184,15 +1298,16 @@ function syncProseFigures() {
     if (node && node.textContent !== text) node.textContent = text;
   };
   const wholesale = `${opening.wholesale.toFixed(2)}%`;
-  set('prose-convenience', PARAMS.depositConvenience.toFixed(1));
+  set('prose-convenience', paramsFor(state.region).depositConvenience.toFixed(1));
   set('prose-wholesale', wholesale);
   set('hint-wholesale', wholesale);
-  set('prose-fiscal-baseline', PARAMS.fiscalBaseline.toFixed(0));
+  set('prose-fiscal-baseline', paramsFor(state.region).fiscalBaseline.toFixed(0));
   set('prose-fiscal-credit', fiscalCreditText());
 }
 
 function render() {
   refreshRuns();
+  renderProse();
   syncProseFigures();
   renderStartHint();
   renderKpis();
@@ -1208,8 +1323,10 @@ function render() {
 /* ------------------------------------------------------------------ */
 
 export function boot() {
+  setGlossaryRegion(state.region);
   mountGlossary();
   renderControls();
+  renderLongRun();
 
   const focusTile = (key) => {
     if (!key) return;
@@ -1239,6 +1356,14 @@ export function boot() {
     state.openMetric = null;
     renderKpis();
     focusTile(closing);
+  });
+
+  // The picker sits in the masthead, outside the panel, so it survives every
+  // re-render and is reachable at any width — the panel moves below the charts
+  // on narrow screens.
+  el('region-select').addEventListener('change', (e) => {
+    setRegion(e.target.value);
+    renderLongRun();
   });
 
   el('account-slider').addEventListener('input', (e) => {

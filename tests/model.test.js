@@ -14,8 +14,8 @@ import {
   monetaryBase,
   bankAssets,
   bankLiabilities,
-  rbnzAssets,
-  rbnzLiabilities,
+  centralBankAssets,
+  centralBankLiabilities,
   balanceSheets,
 } from '../src/model.js';
 import { SCENARIOS, getScenario } from '../src/scenarios.js';
@@ -74,28 +74,28 @@ for (const scenario of SCENARIOS) {
       const prev = history[i - 1];
       const cur = history[i];
       const purchases = cur.qeGovt + cur.qeBankBonds;
-      const advances = (cur.rbnzAdvances ?? 0) - (prev.rbnzAdvances ?? 0);
+      const advances = (cur.cbAdvances ?? 0) - (prev.cbAdvances ?? 0);
       assert.ok(
-        close(cur.base - prev.base, purchases + cur.flpDraw + advances, 1e-9),
-        `month ${cur.month}: base change ${cur.base - prev.base} != purchases ${purchases} + flp ${cur.flpDraw} + advances ${advances}`,
+        close(cur.base - prev.base, purchases + cur.fundingDraw + advances, 1e-9),
+        `month ${cur.month}: base change ${cur.base - prev.base} != purchases ${purchases} + fundingFacility ${cur.fundingDraw} + advances ${advances}`,
       );
     }
   });
 
-  test(`[${scenario.id}] settlement cash is purchases and funding less currency issued`, () => {
+  test(`[${scenario.id}] reserve balances are purchases and funding less currency issued`, () => {
     const { history } = run(scenario.config);
     for (let i = 1; i < history.length; i++) {
       const prev = history[i - 1];
       const cur = history[i];
       const purchases = cur.qeGovt + cur.qeBankBonds;
-      const advances = (cur.rbnzAdvances ?? 0) - (prev.rbnzAdvances ?? 0);
+      const advances = (cur.cbAdvances ?? 0) - (prev.cbAdvances ?? 0);
       assert.ok(
         close(
-          cur.settlementCash - prev.settlementCash,
-          purchases + cur.flpDraw + advances - cur.dCurrency,
+          cur.reserves - prev.reserves,
+          purchases + cur.fundingDraw + advances - cur.dCurrency,
           1e-9,
         ),
-        `month ${cur.month}: settlement cash change does not reconcile`,
+        `month ${cur.month}: reserve balance change does not reconcile`,
       );
     }
   });
@@ -125,7 +125,7 @@ for (const scenario of SCENARIOS) {
     const { history } = run(scenario.config);
     for (const r of history) {
       const assets =
-        r.settlementCash +
+        r.reserves +
         r.bankSecurities +
         r.loansHousing +
         r.loansBusiness +
@@ -135,7 +135,7 @@ for (const scenario of SCENARIOS) {
         r.depositsTotal +
         r.bankDebt +
         r.bankBondsIssued +
-        r.bankFlpBorrowing +
+        r.bankFundingBorrowing +
         r.bankAdvances +
         r.bankEquity;
       assert.ok(close(assets, liabilities, 1e-6), `month ${r.month}: bank book does not balance`);
@@ -144,7 +144,7 @@ for (const scenario of SCENARIOS) {
         r.depositsTotal -
         r.bankEquity -
         r.bankAdvances -
-        r.bankFlpBorrowing -
+        r.bankFundingBorrowing -
         r.bankBondsIssued;
       assert.ok(
         close(r.bankDebt, residual, 1e-6),
@@ -157,10 +157,10 @@ for (const scenario of SCENARIOS) {
     const { history } = run(scenario.config);
     for (const r of history) {
       assert.ok(
-        r.rbnzGovtBonds + r.bankSecurities <= r.crownDebt + 1e-6,
-        `month ${r.month}: central bank ${r.rbnzGovtBonds.toFixed(1)} + banks ${r.bankSecurities.toFixed(1)} exceeds debt ${r.crownDebt.toFixed(1)}`,
+        r.cbGovtBonds + r.bankSecurities <= r.govtDebt + 1e-6,
+        `month ${r.month}: central bank ${r.cbGovtBonds.toFixed(1)} + banks ${r.bankSecurities.toFixed(1)} exceeds debt ${r.govtDebt.toFixed(1)}`,
       );
-      assert.ok(r.rbnzGovtBonds <= r.crownDebt + 1e-6, `month ${r.month}: central bank holds more than exists`);
+      assert.ok(r.cbGovtBonds <= r.govtDebt + 1e-6, `month ${r.month}: central bank holds more than exists`);
     }
   });
 
@@ -171,9 +171,9 @@ for (const scenario of SCENARIOS) {
         assert.ok(Number.isFinite(value), `month ${r.month}: ${key} is ${value}`);
       }
       assert.ok(r.currency >= 0, `negative currency at month ${r.month}`);
-      assert.ok(r.settlementCash >= 0, `negative settlement cash at month ${r.month}`);
+      assert.ok(r.reserves >= 0, `negative reserve balances at month ${r.month}`);
       assert.ok(r.bankSecurities >= 0, `negative bank securities at month ${r.month}`);
-      assert.ok(r.crownDebt > 0, `non-positive crown debt at month ${r.month}`);
+      assert.ok(r.govtDebt > 0, `non-positive government debt at month ${r.month}`);
       assert.ok(r.multiplier > 0, `non-positive multiplier at month ${r.month}`);
     }
   });
@@ -183,7 +183,7 @@ for (const scenario of SCENARIOS) {
     for (const r of history) {
       assert.ok(close(r.m2, r.currency + r.depTransaction + r.depSavings, 1e-9));
       assert.ok(close(r.m3, r.m2 + r.depTerm, 1e-9));
-      assert.ok(close(r.base, r.currency + r.settlementCash, 1e-9));
+      assert.ok(close(r.base, r.currency + r.reserves, 1e-9));
     }
   });
 }
@@ -214,15 +214,15 @@ test('a higher policy rate raises the mortgage rate', () => {
   assert.ok(high.mortgage > low.mortgage);
 });
 
-test('bond purchases raise settlement cash far more than they raise M2', () => {
+test('bond purchases raise reserve balances far more than they raise M2', () => {
   const base = run({ months: 48 }).history.at(-1);
   const qe = run({
     months: 48,
-    govtPurchases: { pace: 2, months: 30, startMonth: 0, nonBankShare: 0.2 },
+    govtPurchases: { pace: 200, months: 24, startMonth: 0, nonBankShare: 0.2 },
   }).history.at(-1);
   const baseGrowth = qe.base / base.base;
   const m2Growth = (qe.m2 - base.m2) / base.m2;
-  assert.ok(baseGrowth > 3, `base should more than triple, got ${baseGrowth.toFixed(2)}x`);
+  assert.ok(baseGrowth > 1.5, `base should rise by half again, got ${baseGrowth.toFixed(2)}x`);
   assert.ok(m2Growth < 0.5, `M2 should rise far less than the base, got ${(m2Growth * 100).toFixed(1)}%`);
 });
 
@@ -230,7 +230,7 @@ test('the money multiplier falls when the central bank buys bonds', () => {
   const base = run({ months: 36 }).history.at(-1);
   const qe = run({
     months: 36,
-    govtPurchases: { pace: 2, months: 24, startMonth: 0, nonBankShare: 0.3 },
+    govtPurchases: { pace: 200, months: 24, startMonth: 0, nonBankShare: 0.3 },
   }).history.at(-1);
   assert.ok(qe.multiplier < base.multiplier * 0.6);
 });
@@ -287,9 +287,9 @@ test('the fiscal impulse is measured from the baseline deficit, not from zero', 
   // Rebuild the month-one gap from the stance alone; a deficit sitting exactly on
   // the baseline must contribute nothing. Subtracting zero instead of the baseline
   // would show up here as an extra 0.15 * 0.4 * baseline.
-  const qeStock = atBaseline.rbnzGovtBonds + atBaseline.rbnzBankBonds;
+  const qeStock = atBaseline.cbGovtBonds + atBaseline.cbBankBonds;
   const compression = Math.min(PARAMS.qeTermCompressionMax, (qeStock / 100) * PARAMS.qeTermCompressionMax);
-  const stance = PARAMS.neutralRealRate + PARAMS.inflationTarget - (atBaseline.ocr - compression * 0.5);
+  const stance = PARAMS.neutralRealRate + PARAMS.inflationTarget - (atBaseline.policyRate - compression * 0.5);
   assert.ok(
     close(atBaseline.outputGap, PARAMS.outputGapStancePass * stance, 1e-12),
     `baseline deficit should add no gap, got ${atBaseline.outputGap}`,
@@ -318,14 +318,14 @@ test('currency demand rises at low rates and drains reserves, not M2', () => {
   assert.ok(cheap.currency > dear.currency, 'low rates should raise currency demand');
   assert.ok(cheap.currency > 10, 'currency demand should rise from the opening level');
   assert.ok(
-    cheap.settlementCash < dear.settlementCash,
+    cheap.reserves < dear.reserves,
     'more currency in circulation should mean fewer reserves, not more',
   );
 });
 
 test('the capital constraint throttles credit when capital is scarce', () => {
-  const normal = run({ months: 60, credit: { confidence: 1, lvrTightness: 0, capitalTarget: 0.135 } }).history.at(-1);
-  const strained = run({ months: 60, credit: { confidence: 1, lvrTightness: 0, capitalTarget: 0.3 } }).history.at(-1);
+  const normal = run({ months: 60, credit: { confidence: 1, creditTightness: 0, capitalTarget: 0.135 } }).history.at(-1);
+  const strained = run({ months: 60, credit: { confidence: 1, creditTightness: 0, capitalTarget: 0.3 } }).history.at(-1);
   assert.ok(strained.loansTotal < normal.loansTotal, 'a binding capital target should reduce lending');
 });
 
@@ -334,18 +334,18 @@ test('a credit crunch shrinks money growth even with rate cuts', () => {
   const crunch = run({
     months: 36,
     policy: { start: 3.5, end: 2.0, convergeMonths: 6 },
-    credit: { confidence: 0.2, lvrTightness: 1, capitalTarget: 0.16 },
+    credit: { confidence: 0.2, creditTightness: 1, capitalTarget: 0.16 },
   }).history.at(-1);
   assert.ok(crunch.m2 < neutral.m2);
 });
 
-test('autopilot responds to an inflationary shock by raising the OCR', () => {
+test('autopilot responds to an inflationary shock by raising the policy rate', () => {
   const { history } = run({
     months: 60,
     autopilot: true,
     fiscal: { deficitPctGdp: 8 },
   });
-  assert.ok(history.at(-1).ocr > 3.5, `autopilot should tighten, got ${history.at(-1).ocr.toFixed(2)}`);
+  assert.ok(history.at(-1).policyRate > 3.5, `autopilot should tighten, got ${history.at(-1).policyRate.toFixed(2)}`);
 });
 
 test('the sectors never hold more government debt than is outstanding', () => {
@@ -354,7 +354,7 @@ test('the sectors never hold more government debt than is outstanding', () => {
   for (const scenario of SCENARIOS) {
     const { final } = run(scenario.config);
     assert.ok(
-      final.rbnzGovtBonds + final.bankSecurities <= final.crownDebt + 1e-6,
+      final.cbGovtBonds + final.bankSecurities <= final.govtDebt + 1e-6,
       `${scenario.id}: central bank plus banks hold more debt than exists`,
     );
     const sheets = balanceSheets(final);
@@ -377,7 +377,7 @@ test('the debt feedback loop is off in every preset except the one built for it'
 });
 
 test('a debt premium turns on only past the threshold', () => {
-  const { history } = run({ months: 120, fiscal: { deficitPctGdp: 1, riskSensitivity: 0.04 } });
+  const { history } = run({ months: 120, fiscal: { deficitPctGdp: 4, riskSensitivity: 0.04 } });
   for (let i = 1; i < history.length; i++) {
     // The premium is set from the stock at the start of the month, so compare with
     // the previous month's ratio rather than this one.
@@ -407,7 +407,7 @@ test('interest sits inside the deficit only when debt is priced', () => {
   assert.ok(close(off.govtInterest, 0, 1e-12), 'no interest bill while debt is unpriced');
   assert.ok(on.govtInterest > 0.5, `expected a monthly interest bill, got ${on.govtInterest.toFixed(2)}bn`);
   assert.ok(
-    on.crownDebt > off.crownDebt,
+    on.govtDebt > off.govtDebt,
     'the same primary deficit should borrow more once interest is on top',
   );
 });
@@ -424,12 +424,12 @@ test('with debt priced, a larger deficit stops adding to M2', () => {
 });
 
 test('the rate record carries the figures the breakdowns quote', () => {
-  // The OCR panel used to re-derive these from raw state, so the panel and the
+  // The policy-rate panel used to re-derive these from raw state, so the panel and the
   // model could disagree. They now come straight off the record.
   const { history } = run({
     months: 24,
     govtPurchases: { pace: 2, months: 12, startMonth: 0, nonBankShare: 1 },
-    flp: { total: 10, months: 10, startMonth: 0 },
+    fundingFacility: { total: 10, months: 10, startMonth: 0 },
   });
   for (const r of history) {
     assert.ok(Number.isFinite(r.qeCompression), `month ${r.month}: qeCompression missing`);
@@ -437,14 +437,14 @@ test('the rate record carries the figures the breakdowns quote', () => {
   }
 
   const last = history.at(-1);
-  const qeStock = last.rbnzGovtBonds + last.rbnzBankBonds;
+  const qeStock = last.cbGovtBonds + last.cbBankBonds;
   const expectedCompression = Math.min(
     PARAMS.qeTermCompressionMax,
     (qeStock / 100) * PARAMS.qeTermCompressionMax,
   );
   assert.ok(close(last.qeCompression, expectedCompression, 1e-12), 'compression must match the holdings');
   assert.ok(
-    close(last.wholesale, Math.max(0, last.ocr + PARAMS.termPremium - last.qeCompression), 1e-9),
+    close(last.wholesale, Math.max(0, last.policyRate + PARAMS.termPremium - last.qeCompression), 1e-9),
     'the quoted wholesale rate must follow from the compression it reports',
   );
   assert.ok(last.fundingSubsidy > 0, 'drawing the facility should produce a subsidy');
@@ -456,7 +456,7 @@ test('balanceSheets() returns balanced sectors', () => {
   const sheets = balanceSheets(final);
   const sum = (rows) => rows.reduce((a, r) => a + r.value, 0);
   assert.ok(close(sum(sheets.banks.assets), sum(sheets.banks.liabilities), 1e-6));
-  assert.ok(close(sum(sheets.rbnz.assets), sum(sheets.rbnz.liabilities) + sheets.rbnz.netWorth, 1e-6));
+  assert.ok(close(sum(sheets.centralBank.assets), sum(sheets.centralBank.liabilities) + sheets.centralBank.netWorth, 1e-6));
 });
 
 test('mergeConfig deep-merges nested objects', () => {
@@ -482,9 +482,9 @@ test('wholesale funding never flexes: there is no aggregate funding gap', () => 
 test('cheap funding is a central bank liability, not wholesale funding', () => {
   const { history } = run(SCENARIOS.find((s) => s.id === 'covid').config);
   const last = history.at(-1);
-  assert.ok(last.bankFlpBorrowing > 0, 'covid preset should draw on the funding facility');
+  assert.ok(last.bankFundingBorrowing > 0, 'covid preset should draw on the funding facility');
   assert.ok(
-    Math.abs(last.bankDebt - 117) < 1e-9,
+    Math.abs(last.bankDebt - 1300) < 1e-9,
     'drawing the facility must not be booked as wholesale funding',
   );
 });
@@ -544,9 +544,9 @@ test('there is an optimal deposit margin: squeezing too hard costs more than it 
 /* ------------------------------------------------------------------ */
 
 test('the opening record reflects the configured policy start', () => {
-  // Regression: the opening record used to show the INITIAL ocr regardless of config.
+  // Regression: the opening record used to show the INITIAL policyRate regardless of config.
   const { history } = run({ months: 2, policy: { start: 1, end: 1, convergeMonths: 1 } });
-  assert.ok(close(history[0].ocr, 1), `opening ocr was ${history[0].ocr}`);
+  assert.ok(close(history[0].policyRate, 1), `opening policyRate was ${history[0].policyRate}`);
   assert.ok(
     close(history[0].mortgage, history[1].mortgage, 1e-9),
     'opening rates must match the first simulated month',
@@ -559,25 +559,25 @@ test('keyframes are hit in the month they are labelled', () => {
     months: 20,
     policy: { keyframes: [{ month: 0, value: 3.5 }, { month: 10, value: 0.5 }] },
   });
-  assert.ok(close(history[0].ocr, 3.5), `month 0 = ${history[0].ocr}`);
-  assert.ok(close(history[5].ocr, 2.0), `month 5 = ${history[5].ocr}`);
-  assert.ok(close(history[10].ocr, 0.5), `month 10 = ${history[10].ocr}`);
-  assert.ok(close(history[20].ocr, 0.5), 'holds the final keyframe');
+  assert.ok(close(history[0].policyRate, 3.5), `month 0 = ${history[0].policyRate}`);
+  assert.ok(close(history[5].policyRate, 2.0), `month 5 = ${history[5].policyRate}`);
+  assert.ok(close(history[10].policyRate, 0.5), `month 10 = ${history[10].policyRate}`);
+  assert.ok(close(history[20].policyRate, 0.5), 'holds the final keyframe');
 });
 
 test('a two-point path reaches its target exactly at convergeMonths', () => {
   // Regression: "converge in 12 months" used to land at month 13.
   const { history } = run({ months: 14, policy: { start: 3.5, end: 0.25, convergeMonths: 12 } });
-  assert.ok(close(history[6].ocr, (3.5 + 0.25) / 2, 1e-9), `month 6 = ${history[6].ocr}`);
-  assert.ok(close(history[12].ocr, 0.25), `month 12 = ${history[12].ocr}`);
-  assert.ok(close(history[14].ocr, 0.25), 'stays at the target afterwards');
+  assert.ok(close(history[6].policyRate, (3.5 + 0.25) / 2, 1e-9), `month 6 = ${history[6].policyRate}`);
+  assert.ok(close(history[12].policyRate, 0.25), `month 12 = ${history[12].policyRate}`);
+  assert.ok(close(history[14].policyRate, 0.25), 'stays at the target afterwards');
 });
 
-test('autopilot keeps the OCR inside its bounds', () => {
+test('autopilot keeps the policy rate inside its bounds', () => {
   for (const deficitPctGdp of [0, 40]) {
     const { history } = run({ months: 120, autopilot: true, fiscal: { deficitPctGdp } });
     for (const r of history) {
-      assert.ok(r.ocr >= 0.25 - 1e-9 && r.ocr <= 9 + 1e-9, `ocr ${r.ocr} at month ${r.month}`);
+      assert.ok(r.policyRate >= 0.25 - 1e-9 && r.policyRate <= 9 + 1e-9, `policyRate ${r.policyRate} at month ${r.month}`);
     }
   }
 });
@@ -592,7 +592,7 @@ test('the central bank cannot buy more bonds than are outstanding', () => {
     govtPurchases: { pace: 50, months: 24, nonBankShare: 0.5 },
   });
   for (const r of history) {
-    assert.ok(r.rbnzGovtBonds <= r.crownDebt + 1e-6, `month ${r.month}`);
+    assert.ok(r.cbGovtBonds <= r.govtDebt + 1e-6, `month ${r.month}`);
   }
 });
 
@@ -606,7 +606,7 @@ test('createInitialState returns independent copies', () => {
   const b = createInitialState();
   a.loansHousing = 1;
   assert.notEqual(b.loansHousing, 1, 'states must not share objects');
-  assert.equal(INITIAL.loansHousing, 350, 'the template must not be mutated');
+  assert.equal(INITIAL.loansHousing, 6200, 'the template must not be mutated');
 });
 
 test('run() does not mutate shared scenario presets', () => {
@@ -627,7 +627,7 @@ test('getScenario falls back to the first preset', () => {
   assert.equal(getScenario('does-not-exist'), SCENARIOS[0]);
 });
 
-test('the crown debt rises by the monthly deficit', () => {
+test('the government debt rises by the monthly deficit', () => {
   const { history } = run({
     months: 12,
     fiscal: { deficitPctGdp: 3 },
@@ -635,7 +635,7 @@ test('the crown debt rises by the monthly deficit', () => {
   });
   for (let i = 1; i < history.length; i++) {
     assert.ok(
-      close(history[i].crownDebt - history[i - 1].crownDebt, history[i].deficit, 1e-9),
+      close(history[i].govtDebt - history[i - 1].govtDebt, history[i].deficit, 1e-9),
       `month ${history[i].month}`,
     );
   }
@@ -650,14 +650,14 @@ test('extreme settings never produce an impossible balance sheet', () => {
     { policy: { start: 0, end: 0, convergeMonths: 1 } },
     { policy: { start: 9, end: 9, convergeMonths: 1 } },
     { deposits: { margin: 1.5 } },
-    { credit: { confidence: 0.2, lvrTightness: 1, capitalTarget: 0.3 } },
+    { credit: { confidence: 0.2, creditTightness: 1, capitalTarget: 0.3 } },
     { households: { termPreference: 0.25 } },
     { households: { termPreference: -0.15 } },
     { govtPurchases: { pace: 5, months: 60, nonBankShare: 0 } },
     { govtPurchases: { pace: 50, months: 24, nonBankShare: 0.5 } },
     { govtPurchases: { pace: 50, months: 24, nonBankShare: 1 } },
     { fiscal: { deficitPctGdp: 20 } },
-    { flp: { total: 40, months: 6, startMonth: 0 } },
+    { fundingFacility: { total: 40, months: 6, startMonth: 0 } },
     { autopilot: true, fiscal: { deficitPctGdp: 15 } },
     { govtSales: { pace: 3, startMonth: 0 }, deposits: { margin: 1.4 } },
   ];
@@ -673,11 +673,11 @@ test('extreme settings never produce an impossible balance sheet', () => {
       assert.ok(r.depTerm >= -1e-9, `config #${i} month ${r.month}: negative term deposits`);
       assert.ok(r.depTerm <= r.depositsTotal + 1e-6, `config #${i} month ${r.month}: term > total`);
       assert.ok(r.m2 <= r.m3 + 1e-6, `config #${i} month ${r.month}: M2 exceeds M3`);
-      assert.ok(r.settlementCash >= 0, `config #${i} month ${r.month}: negative reserves`);
+      assert.ok(r.reserves >= 0, `config #${i} month ${r.month}: negative reserves`);
       assert.ok(r.bankDebt >= -1e-6, `config #${i} month ${r.month}: negative wholesale funding`);
       assert.ok(r.currency >= 0, `config #${i} month ${r.month}: negative currency`);
       assert.ok(
-        r.rbnzGovtBonds + r.bankSecurities <= r.crownDebt + 1e-6,
+        r.cbGovtBonds + r.bankSecurities <= r.govtDebt + 1e-6,
         `config #${i} month ${r.month}: more bonds held than outstanding`,
       );
     }
@@ -704,7 +704,7 @@ test('buying a bank bond from a bank creates a liability, not a securities sale'
   const first = history[0];
   const last = history.at(-1);
   const nonBankShare = SCENARIOS.find((s) => s.id === 'bank-bonds').config.bankBondPurchases.nonBankShare;
-  const bought = last.rbnzBankBonds - first.rbnzBankBonds;
+  const bought = last.cbBankBonds - first.cbBankBonds;
 
   assert.ok(close(last.bankSecurities, first.bankSecurities, 1e-6), 'government securities must not move');
   assert.ok(
