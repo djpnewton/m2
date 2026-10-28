@@ -333,3 +333,23 @@ test('the assumptions heading appears exactly once', () => {
   assert.equal((prose.match(heading) ?? []).length, 0, 'the prose must not repeat the heading');
   assert.match(html, /<h3>Assumptions worth knowing<\/h3>\s*<div id="assumptions">/);
 });
+
+test('the long-run chart can be narrowed to a window of years', () => {
+  // The pickers, the reset button and the rebasing all have to exist together:
+  // a window without a rebase would draw four series floating above 100.
+  assert.match(html, /id="longrun-from"/);
+  assert.match(html, /id="longrun-to"/);
+  assert.match(html, /id="longrun-reset"/);
+  assert.match(source, /createHistory\(state\.region, \{ from, to \}\)/);
+  assert.match(source, /setWindow\('from'/);
+  assert.match(source, /setWindow\('to'/);
+});
+
+test('the long-run chart can be dragged to select a window', () => {
+  const charts = fs.readFileSync(new URL('../src/charts.js', import.meta.url), 'utf8');
+  assert.match(charts, /overlay\.addEventListener\('pointerdown'/);
+  assert.match(charts, /s\.onBrush\(from, to\)/);
+  assert.match(charts, /overlay\.setPointerCapture/);
+  assert.match(source, /onBrush: \(a, b\)/);
+  assert.match(source, /windowFromBrush\(h, a, b, MIN_WINDOW_YEARS\)/);
+});

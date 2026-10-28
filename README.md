@@ -5,9 +5,13 @@ United States **and** New Zealand and switchable from the picker in the masthead
 or sell government and bank bonds, add cheap central bank funding, and watch the money stock respond —
 and, more importantly, watch *why*.
 
-A closing chart puts the argument in its longest context: US gold, consumer prices, M2 and real GDP
-from 1980 to 2024, indexed to 100 in 1980, with the quantity-theory price level (M2 ÷ real GDP)
-overlaid. Money grew 13.7×, prices 3.8×, real output 3.2× and gold 3.9×. The log levels correlate at
+A closing chart puts the argument in its longest context: gold, consumer prices, M2 and real GDP for
+either country from 1980 to 2024, indexed to 100 in the first year of the selected window, with the
+quantity-theory price level (M2 ÷ real GDP) overlaid. Two year pickers narrow the window, and dragging
+across the chart selects one directly. Either way the index rebases on the new first year and every
+figure in the card note is recomputed for it, so a 1990–2000 window is described in its own terms rather
+than the full span's. A drag shorter than five years is widened rather than drawn, and a click without a
+drag changes nothing. Money grew 13.7×, prices 3.8×, real output 3.2× and gold 3.9×. The log levels correlate at
 0.98 — but both trend upward, so that number is mostly the shared trend, and the note on the page says
 so. The part with content is the gap between the dashed line and the CPI line: money growth in excess of
 real growth ran 4.3× against 3.8× of inflation, and the difference is velocity drift.
@@ -58,11 +62,11 @@ you are relying on the browser's own caching.
 npm test             # node --test tests/*.test.js
 ```
 
-240 tests: 142 cover the model (accounting identities, policy path, fiscal feedback, robustness), 43
-cover the chart helpers, 23 cover the page — control wiring, every figure the KPI breakdowns quote, a
-starting hint for every preset, the document order and the cache tags — 14 cover the long-run history tables, 12 cover
-the regional split (keys, labels, identities in both calibrations, no hard-coded wording), and 6 cover
-the glossary. The chart and history tests import their modules
+250 tests: 142 cover the model (accounting identities, policy path, fiscal feedback, robustness), 43
+cover the chart helpers, 26 cover the page — control wiring, every figure the KPI breakdowns quote, a
+starting hint for every preset, the document order and the cache tags — 21 cover the long-run history
+tables and windows, 12 cover the regional split (keys, labels, identities in both calibrations, no
+hard-coded wording), and 6 cover the glossary. The chart and history tests import their modules
 directly — they touch the DOM only inside their render functions, so the pure maths is testable without
 a browser or a DOM shim.
 

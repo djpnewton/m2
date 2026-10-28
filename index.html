@@ -148,12 +148,20 @@
 
         <section class="card">
           <header class="card-head">
-            <h3>Four decades in one picture</h3>
+            <h3>The long run in one picture</h3>
             <p id="longrun-blurb">
               Gold, consumer prices, money and real GDP, each indexed to 100 in 1980. The dashed line is
               what the quantity equation implies if velocity never moved: money ÷ real GDP.
             </p>
           </header>
+          <div class="chart-window">
+            <label for="longrun-from">From</label>
+            <select id="longrun-from" aria-label="First year of the chart"></select>
+            <label for="longrun-to">to</label>
+            <select id="longrun-to" aria-label="Last year of the chart"></select>
+            <button type="button" class="ghost" id="longrun-reset">All years</button>
+            <span class="chart-window-hint">or drag across the chart</span>
+          </div>
           <div id="chart-longrun"></div>
           <p class="card-note" id="longrun-note"></p>
         </section>

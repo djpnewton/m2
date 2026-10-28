@@ -244,6 +244,18 @@ export function lineChart(container, spec) {
       );
     }
 
+    const band = svg('rect', {
+      x: margin.left,
+      y: margin.top,
+      width: 0,
+      height: innerH,
+      fill: COLORS.m2,
+      opacity: 0.14,
+      'pointer-events': 'none',
+      visibility: 'hidden',
+    });
+    root.appendChild(band);
+
     const hover = svg('line', {
       y1: margin.top,
       y2: margin.top + innerH,
@@ -268,7 +280,56 @@ export function lineChart(container, spec) {
     root.appendChild(overlay);
 
     const xValues = [...new Set(allPoints.map((p) => p[0]))].sort((a, b) => a - b);
+
+    // Drag to select a range. Implemented here rather than in a chart subclass so
+    // every line chart can opt in by passing `onBrush`.
+    const valueAt = (clientX) => {
+      const rect = root.getBoundingClientRect();
+      const px = ((clientX - rect.left) / rect.width) * width;
+      return Math.min(xMax, Math.max(0, ((px - margin.left) / innerW) * xMax));
+    };
+    const paintBand = (a, b) => {
+      const left = X(Math.min(a, b));
+      band.setAttribute('x', left);
+      band.setAttribute('width', Math.max(0, X(Math.max(a, b)) - left));
+      band.setAttribute('visibility', 'visible');
+    };
+    let brush = null;
+
+    if (s.onBrush) {
+      overlay.style.cursor = 'crosshair';
+      overlay.addEventListener('pointerdown', (ev) => {
+        brush = valueAt(ev.clientX);
+        band.setAttribute('visibility', 'visible');
+        paintBand(brush, brush);
+        tip.hidden = true;
+        hover.setAttribute('opacity', 0);
+        for (const d of dots) d.setAttribute('opacity', 0);
+        overlay.setPointerCapture?.(ev.pointerId);
+      });
+      overlay.addEventListener('pointerup', (ev) => {
+        if (brush === null) return;
+        const end = valueAt(ev.clientX);
+        const from = Math.min(brush, end);
+        const to = Math.max(brush, end);
+        brush = null;
+        band.setAttribute('visibility', 'hidden');
+        overlay.releasePointerCapture?.(ev.pointerId);
+        // A click, not a drag: leave the window alone.
+        if (to - from < 1) return;
+        s.onBrush(from, to);
+      });
+      overlay.addEventListener('pointercancel', () => {
+        brush = null;
+        band.setAttribute('visibility', 'hidden');
+      });
+    }
+
     overlay.addEventListener('pointermove', (ev) => {
+      if (brush !== null) {
+        paintBand(brush, valueAt(ev.clientX));
+        return;
+      }
       const rect = root.getBoundingClientRect();
       const px = ((ev.clientX - rect.left) / rect.width) * width;
       const target = ((px - margin.left) / innerW) * xMax;

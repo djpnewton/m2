@@ -4,7 +4,7 @@ import { paramsFor, proseFor, termsFor } from './regions.js?cache-tag=1';
 import { lineChart, stackedArea, waterfall, COLORS } from './charts.js?cache-tag=1';
 import { renderAccounts } from './accounts.js?cache-tag=1';
 import { defineTerm, mountGlossary, setGlossaryRegion } from './glossary.js?cache-tag=1';
-import { BASE_YEAR, createHistory, correlation } from './history.js?cache-tag=1';
+import { createHistory, correlation, spanOf, velocityChange, windowFromBrush } from './history.js?cache-tag=1';
 
 const state = {
   region: 'us',
@@ -22,6 +22,12 @@ const signed = (v) => `${v >= 0 ? '+' : '−'}${Math.abs(v).toFixed(1)}`;
 
 let runs = { primary: null, compare: null };
 const charts = {};
+
+/** Year window for the long-run chart; null means the dataset's full span. */
+const longRunWindow = { from: null, to: null };
+
+/** Shortest window the chart will draw: below this the note stops being meaningful. */
+const MIN_WINDOW_YEARS = 5;
 
 /** Active terminology and parameters. Re-bound whenever the region changes. */
 let t = termsFor('us');
@@ -972,9 +978,14 @@ function applyChart(key, factory, mountId, spec) {
  * model is arguing about, fixed to complete calendar years.
  */
 function renderLongRun() {
-  const h = createHistory(state.region);
+  const span = spanOf(state.region);
+  const from = longRunWindow.from ?? span.from;
+  const to = longRunWindow.to ?? span.to;
+  const h = createHistory(state.region, { from, to });
   const money = h.moneyLabel;
   const years = h.years;
+  const first = h.from;
+  const last = h.to;
 
   applyChart('longrun', lineChart, 'chart-longrun', {
     series: [
@@ -990,38 +1001,102 @@ function renderLongRun() {
         points: h.impliedPriceLevel(),
       },
     ],
-    xTicks: [...years.filter((y) => y % 5 === 0), years.at(-1)].map((y) => y - BASE_YEAR),
-    xFormat: (v) => String(BASE_YEAR + v),
+    xTicks: tickYears(years),
+    xFormat: (v) => String(first + v),
     yFormat: (v) => v.toFixed(0),
     height: 300,
+    onBrush: (a, b) => {
+      const range = windowFromBrush(h, a, b, MIN_WINDOW_YEARS);
+      longRunWindow.from = range.from === span.from ? null : range.from;
+      longRunWindow.to = range.to === span.to ? null : range.to;
+      renderLongRun();
+    },
   });
 
   const blurb = el('longrun-blurb');
   if (blurb) {
-    blurb.textContent = `Gold, consumer prices, ${money} and real GDP for ${h.label}, each indexed to 100 in ${BASE_YEAR}. The dashed line is what the quantity equation implies if velocity never moved: ${money} ÷ real GDP.`;
+    blurb.textContent = `Gold, consumer prices, ${money} and real GDP for ${h.label}, each indexed to 100 in ${first}. The dashed line is what the quantity equation implies if velocity never moved: ${money} ÷ real GDP.`;
   }
+
+  renderWindowOptions(span, first, last);
 
   const f = (v) => v.toFixed(1);
   const r = (v) => (Number.isFinite(v) ? v.toFixed(2).replace('-', '−') : '—');
   const implied = h.multipleOf('m2') / h.multipleOf('rgdp');
-  const gap = Math.round((1 - h.multipleOf('cpi') / implied) * 100);
+  const gapPct = Math.round((1 - h.multipleOf('cpi') / implied) * 100);
+  const gap = `${Math.abs(gapPct)}% ${gapPct >= 0 ? 'above' : 'below'}`;
   const goldRatio = h.multipleOf('gold') / h.multipleOf('cpi');
   const goldVsPrices =
     Math.abs(goldRatio - 1) < 0.15
       ? `within ${Math.abs(Math.round((goldRatio - 1) * 100))}% of consumer prices`
       : `${goldRatio > 1 ? 'ahead of' : 'behind'} consumer prices`;
+  const velocityRatio = velocityChange(h);
+  const velocityWord =
+    velocityRatio < 0.98
+      ? `it fell ${Math.round((1 - velocityRatio) * 100)}%`
+      : velocityRatio > 1.02
+        ? `it rose ${Math.round((velocityRatio - 1) * 100)}%`
+        : 'it was roughly flat';
   const levels = correlation(
     h.rows.map((row) => Math.log(row[3])),
     h.rows.map((row) => Math.log(row[2])),
   );
 
-  el('longrun-note').innerHTML = `${money} grew <b>${f(h.multipleOf('m2'))}×</b> in ${h.label} while
-    consumer prices grew <b>${f(h.multipleOf('cpi'))}×</b>. Real GDP grew
+  el('longrun-note').innerHTML = `${money} grew <b>${f(h.multipleOf('m2'))}×</b> in ${h.label} between
+    ${first} and ${last} while consumer prices grew <b>${f(h.multipleOf('cpi'))}×</b>. Real GDP grew
     <b>${f(h.multipleOf('rgdp'))}×</b>, so money growth in excess of real growth — the dashed line — rose
-    <b>${f(implied)}×</b>, ${gap}% above actual inflation. Gold grew <b>${f(h.multipleOf('gold'))}×</b>,
+    <b>${f(implied)}×</b>, ${gap} actual inflation. Gold grew <b>${f(h.multipleOf('gold'))}×</b>,
     ${goldVsPrices} — but nothing like ${money}, which grew <b>${f(h.multipleOf('m2'))}×</b>. The gap
-    between the dashed line and consumer prices is velocity, and velocity drifted down over the period. The correlation between the two log levels is
+    between the dashed line and consumer prices is velocity over this window: ${velocityWord}. The correlation between the two log levels is
     <b>${r(levels)}</b> — but both series trend upward, so that number is mostly the shared trend.`;
+}
+
+/** Five-year ticks anchored on the window, plus both ends so the edges are labelled. */
+function tickYears(years) {
+  if (years.length === 0) return [];
+  const origin = years[0];
+  const ticks = years.filter((year) => (year - origin) % 5 === 0).map((year) => year - origin);
+  const last = years.at(-1) - origin;
+  if (!ticks.includes(last)) ticks.push(last);
+  return ticks;
+}
+
+/** Populate the two year pickers; only rebuilds when the span itself changes. */
+function renderWindowOptions(span, from, to) {
+  const startSelect = el('longrun-from');
+  const endSelect = el('longrun-to');
+  if (!startSelect || !endSelect) return;
+  const years = [];
+  for (let year = span.from; year <= span.to; year++) years.push(year);
+  const signature = `${span.from}-${span.to}`;
+  if (startSelect.dataset.span !== signature) {
+    const options = years.map((year) => `<option value="${year}">${year}</option>`).join('');
+    startSelect.innerHTML = options;
+    endSelect.innerHTML = options;
+    startSelect.dataset.span = signature;
+    endSelect.dataset.span = signature;
+  }
+  if (startSelect.value !== String(from)) startSelect.value = String(from);
+  if (endSelect.value !== String(to)) endSelect.value = String(to);
+  el('longrun-reset').hidden = from === span.from && to === span.to;
+}
+
+/** Keep the window coherent: a start after the end drags the end along, and vice versa. */
+function setWindow(which, value) {
+  const span = spanOf(state.region);
+  const current = {
+    from: longRunWindow.from ?? span.from,
+    to: longRunWindow.to ?? span.to,
+  };
+  const year = Number(value);
+  if (which === 'from') {
+    current.from = Math.min(Math.max(year, span.from), current.to - MIN_WINDOW_YEARS);
+  } else {
+    current.to = Math.max(Math.min(year, span.to), current.from + MIN_WINDOW_YEARS);
+  }
+  longRunWindow.from = current.from === span.from ? null : current.from;
+  longRunWindow.to = current.to === span.to ? null : current.to;
+  renderLongRun();
 }
 
 function renderCharts() {
@@ -1361,6 +1436,14 @@ export function boot() {
   // on narrow screens.
   el('region-select').addEventListener('change', (e) => {
     setRegion(e.target.value);
+    renderLongRun();
+  });
+
+  el('longrun-from').addEventListener('change', (e) => setWindow('from', e.target.value));
+  el('longrun-to').addEventListener('change', (e) => setWindow('to', e.target.value));
+  el('longrun-reset').addEventListener('click', () => {
+    longRunWindow.from = null;
+    longRunWindow.to = null;
     renderLongRun();
   });
 

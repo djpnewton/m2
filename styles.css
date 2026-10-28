@@ -1214,3 +1214,35 @@ input[type='range']:focus-visible::-webkit-slider-thumb {
   white-space: nowrap;
   border: 0;
 }
+
+/* Year window for the long-run chart. */
+.chart-window {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 10px 0 4px;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.chart-window select {
+  font: inherit;
+  font-size: 12.5px;
+  padding: 5px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--ink);
+}
+
+.chart-window-hint {
+  color: var(--faint);
+  font-size: 12px;
+}
+
+.chart-window .ghost {
+  width: auto;
+  margin: 0 0 0 4px;
+  padding: 5px 10px;
+}

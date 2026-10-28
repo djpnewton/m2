@@ -177,21 +177,58 @@ function multipleOf_(rows, key, baseYear) {
   return rows.at(-1)[col] / base;
 }
 
+/** The years every dataset spans, so the page can offer a window without hard-coding one. */
+export function spanOf(regionId = 'us') {
+  const rows = (DATASETS[regionId] ?? DATASETS.us).rows;
+  return { from: rows[0][0], to: rows.at(-1)[0] };
+}
+
 /**
- * Everything the long-run panel needs for one region: the table plus the
- * index helpers bound to it, so the page never has to know which dataset it is
- * drawing.
+ * Everything the long-run panel needs for one region, optionally restricted to a
+ * window of years. The index is rebased on the window's first year, so a chart of
+ * 2000–2010 starts at 100 in 2000 rather than in 1980.
  */
-export function createHistory(regionId = 'us') {
+export function createHistory(regionId = 'us', { from, to } = {}) {
   const d = DATASETS[regionId] ?? DATASETS.us;
+  const start = from ?? d.rows[0][0];
+  const end = to ?? d.rows.at(-1)[0];
+  const rows = d.rows.filter((row) => row[0] >= start && row[0] <= end);
+  const baseYear = rows.length > 0 ? rows[0][0] : start;
   return {
     ...d,
-    rows: d.rows,
-    years: yearsOf(d.rows),
-    indexed: (key, baseYear = BASE_YEAR) => indexOf(d.rows, key, baseYear),
-    impliedPriceLevel: (baseYear = BASE_YEAR) => impliedOf(d.rows, baseYear),
-    multipleOf: (key, baseYear = BASE_YEAR) => multipleOf_(d.rows, key, baseYear),
+    rows,
+    years: yearsOf(rows),
+    from: baseYear,
+    to: rows.length > 0 ? rows.at(-1)[0] : end,
+    indexed: (key, base = baseYear) => indexOf(rows, key, base),
+    impliedPriceLevel: (base = baseYear) => impliedOf(rows, base),
+    multipleOf: (key, base = baseYear) => multipleOf_(rows, key, base),
   };
+}
+
+/**
+ * Turn a dragged range on the chart into a whole-year window. The offsets are in
+ * x units (years since the window's first year); the result is clamped to the
+ * dataset and widened to at least `min` years, because a drag can be a few pixels
+ * wide and the card's figures stop meaning anything below that.
+ */
+export function windowFromBrush(h, a, b, min = 5) {
+  const low = Math.round(h.from + Math.min(a, b));
+  const high = Math.round(h.from + Math.max(a, b));
+  let from = Math.min(Math.max(low, h.from), h.to);
+  let to = Math.min(Math.max(high, from), h.to);
+  if (to - from < min) to = Math.min(h.to, from + min);
+  if (to - from < min) from = Math.max(h.from, to - min);
+  return { from, to };
+}
+
+/**
+ * Velocity change across a history window, as a ratio: V = PY / M, so
+ * V_end / V_start = (real growth × price change) ÷ money growth.
+ */
+export function velocityChange(h) {
+  const implied = h.multipleOf('m2') / h.multipleOf('rgdp');
+  return h.multipleOf('cpi') / implied;
 }
 
 /** Pearson correlation of two equal-length numeric arrays. */

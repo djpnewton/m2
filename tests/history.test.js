@@ -8,9 +8,13 @@ import {
   SERIES,
   YEARS,
   correlation,
+  createHistory,
   indexed,
   impliedPriceLevel,
   multipleOf,
+  spanOf,
+  velocityChange,
+  windowFromBrush,
 } from '../src/history.js';
 
 /**
@@ -138,4 +142,82 @@ test('the New Zealand money column is M2, not a wider aggregate', () => {
       `${year}: table has ${row[SERIES.m2]}, IMF M2 is ${value}`,
     );
   }
+});
+
+/* ------------------------------------------------------------------ */
+/* Windowed history                                                    */
+/* ------------------------------------------------------------------ */
+
+test('a window slices the rows and rebases the index on its first year', () => {
+  const h = createHistory('us', { from: 2000, to: 2010 });
+  assert.equal(h.from, 2000);
+  assert.equal(h.to, 2010);
+  assert.deepEqual(h.years, [2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010]);
+
+  const money = h.indexed('m2');
+  assert.equal(money.length, h.years.length);
+  assert.deepEqual(money[0], [0, 100], 'the window starts at 100, not 1980');
+  // 2000 M2 4792.1 -> 2010 8645.6
+  assert.ok(Math.abs(h.multipleOf('m2') - 8645.6 / 4792.1) < 1e-9);
+  assert.ok(Math.abs(h.impliedPriceLevel().at(-1)[1] - h.impliedPriceLevel().at(-1)[1]) < 1e-9);
+});
+
+test('open-ended windows default to the dataset edges', () => {
+  const span = spanOf('nz');
+  const h = createHistory('nz', { from: 2015 });
+  assert.equal(h.from, 2015);
+  assert.equal(h.to, span.to);
+  const whole = createHistory('nz');
+  assert.equal(whole.from, span.from);
+  assert.equal(whole.to, span.to);
+  assert.equal(whole.rows.length, span.to - span.from + 1);
+});
+
+test('a window outside the data yields an empty, non-throwing result', () => {
+  const h = createHistory('us', { from: 1900, to: 1910 });
+  assert.deepEqual(h.rows, []);
+  assert.deepEqual(h.indexed('m2'), []);
+  assert.ok(Number.isNaN(h.multipleOf('m2')));
+});
+
+test('the implied price level is rebased too', () => {
+  const h = createHistory('us', { from: 1990, to: 2020 });
+  const points = h.impliedPriceLevel();
+  assert.equal(points[0][1], 100);
+  const ratio = (y) => {
+    const row = h.rows.find((r) => r[0] === y);
+    return row[SERIES.m2] / row[SERIES.rgdp];
+  };
+  assert.ok(Math.abs(points.at(-1)[1] - (ratio(2020) / ratio(1990)) * 100) < 1e-9);
+});
+
+test('velocity change is price change divided by the M2-per-real-GDP ratio', () => {
+  // V = PY / M, so V_end/V_start = (price change × real growth) ÷ money growth.
+  // Regression: the card had this upside down, reporting New Zealand's 73% fall
+  // as a 272% rise.
+  const nz = createHistory('nz');
+  assert.ok(Math.abs(velocityChange(nz) - 0.269) < 0.005, `NZ ${velocityChange(nz).toFixed(3)}`);
+  const us = createHistory('us');
+  assert.ok(Math.abs(velocityChange(us) - 0.895) < 0.005, `US ${velocityChange(us).toFixed(3)}`);
+  // Velocity rose through the 1990s in the US.
+  const nineties = createHistory('us', { from: 1990, to: 2000 });
+  assert.ok(velocityChange(nineties) > 1.2, `1990-2000 ${velocityChange(nineties).toFixed(3)}`);
+});
+
+test('a dragged range becomes a whole-year window', () => {
+  const h = createHistory('us');
+  assert.deepEqual(windowFromBrush(h, 10, 20), { from: 1990, to: 2000 });
+  assert.deepEqual(windowFromBrush(h, 20, 10), { from: 1990, to: 2000 }, 'dragging right-to-left');
+  // A narrow drag is widened rather than producing a meaningless window.
+  assert.deepEqual(windowFromBrush(h, 5, 6), { from: 1985, to: 1990 });
+  // And a drag past the edge is clamped.
+  assert.deepEqual(windowFromBrush(h, 40, 99), { from: 2019, to: 2024 });
+});
+
+test('a brushed window inside a narrowed chart uses that chart’s own years', () => {
+  const h = createHistory('us', { from: 1990, to: 2000 });
+  // Offsets are relative to the window's first year, not to 1980.
+  assert.deepEqual(windowFromBrush(h, 2, 6, 4), { from: 1992, to: 1996 });
+  // With the default minimum of five years, a four-year drag widens by one.
+  assert.deepEqual(windowFromBrush(h, 2, 6), { from: 1992, to: 1997 });
 });
