@@ -1,10 +1,10 @@
-import { run, mergeConfig } from './model.js';
-import { scenariosFor, getScenario } from './scenarios.js';
-import { paramsFor, proseFor, termsFor } from './regions.js';
-import { lineChart, stackedArea, waterfall, COLORS } from './charts.js';
-import { renderAccounts } from './accounts.js';
-import { defineTerm, mountGlossary, setGlossaryRegion } from './glossary.js';
-import { BASE_YEAR, createHistory, correlation } from './history.js';
+import { run, mergeConfig } from './model.js?cache-tag=1';
+import { scenariosFor, getScenario } from './scenarios.js?cache-tag=1';
+import { paramsFor, proseFor, termsFor } from './regions.js?cache-tag=1';
+import { lineChart, stackedArea, waterfall, COLORS } from './charts.js?cache-tag=1';
+import { renderAccounts } from './accounts.js?cache-tag=1';
+import { defineTerm, mountGlossary, setGlossaryRegion } from './glossary.js?cache-tag=1';
+import { BASE_YEAR, createHistory, correlation } from './history.js?cache-tag=1';
 
 const state = {
   region: 'us',

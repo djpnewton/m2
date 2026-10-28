@@ -29,7 +29,7 @@
  * per annum.
  */
 
-import { initialFor, paramsFor, regionOf, termsFor } from './regions.js';
+import { initialFor, paramsFor, regionOf, termsFor } from './regions.js?cache-tag=1';
 
 /* ------------------------------------------------------------------ */
 /* Calibration                                                         */

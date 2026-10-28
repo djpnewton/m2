@@ -9,7 +9,7 @@
  * link is only fetched if the reader chooses to follow it.
  */
 
-import { glossaryOverridesFor, glossaryTitlesFor } from './regions.js';
+import { glossaryOverridesFor, glossaryTitlesFor } from './regions.js?cache-tag=1';
 
 export const GLOSSARY = {
   'taylor-rule': {

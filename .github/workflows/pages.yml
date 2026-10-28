@@ -45,6 +45,10 @@ jobs:
         run: |
           mkdir -p _site
           cp -R index.html styles.css src CNAME _site/
+      - name: Bake in the cache tags
+        # A static host cannot rewrite responses, so the tags have to be written
+        # into the files before upload. This is the same code the dev server uses.
+        run: python3 scripts/cache_tag.py _site
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

@@ -3,8 +3,8 @@
  * so a preset can be loaded into the controls and then edited.
  */
 
-import { SCENARIOS as US_SCENARIOS } from './scenarios-us.js';
-import { SCENARIOS as NZ_SCENARIOS } from './scenarios-nz.js';
+import { SCENARIOS as US_SCENARIOS } from './scenarios-us.js?cache-tag=1';
+import { SCENARIOS as NZ_SCENARIOS } from './scenarios-nz.js?cache-tag=1';
 
 export const SCENARIOS_BY_REGION = { us: US_SCENARIOS, nz: NZ_SCENARIOS };
 

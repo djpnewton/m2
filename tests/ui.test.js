@@ -277,16 +277,41 @@ test('a missing chart mount is skipped, not thrown', () => {
   assert.match(source, /no #\$\{mountId\} on the page/);
 });
 
-test('boot failures name the stale-cache cause', () => {
+test('a boot failure is reported on the page, not just to the console', () => {
   const main = fs.readFileSync(new URL('../src/main.js', import.meta.url), 'utf8');
   assert.match(main, /catch \(error\)/);
-  assert.match(main, /cached copy of the scripts/);
   assert.match(main, /reportFatal/);
+  assert.match(main, /role', 'alert'/);
+  // The banner carries the error itself; it does not guess at a cause.
+  assert.match(main, /error\.message/);
 });
 
-test('the entry module and stylesheet are cache-versioned', () => {
-  // Not a fix on its own — nested module imports keep their own URLs — but it
-  // stops the entry point and the CSS from drifting apart from the HTML.
-  assert.match(html, /src="src\/main\.js\?v=\d+"/);
-  assert.match(html, /href="styles\.css\?v=\d+"/);
+test('the entry module and stylesheet carry a cache tag', () => {
+  // The dev server replaces these with a content hash; a reference without the
+  // tag would be served under a bare URL and cached forever.
+  assert.match(html, /src="src\/main\.js\?cache-tag=\d+"/);
+  assert.match(html, /href="styles\.css\?cache-tag=\d+"/);
+});
+
+test('every relative import carries a cache tag', () => {
+  // Same reason: an untagged import is a URL that never changes.
+  const files = fs.readdirSync(new URL('../src/', import.meta.url)).filter((f) => f.endsWith('.js'));
+  assert.ok(files.length > 5, `expected several modules, found ${files.length}`);
+  for (const file of files) {
+    const text = fs.readFileSync(new URL(`../src/${file}`, import.meta.url), 'utf8');
+    const imports = [...text.matchAll(/from '\.\/[^']+\.js[^']*'/g)].map((m) => m[0]);
+    for (const spec of imports) {
+      assert.match(spec, /\?cache-tag=\d+'$/, `${file}: ${spec} has no cache-tag`);
+    }
+  }
+});
+
+test('the deploy bakes cache tags with the same code the dev server uses', () => {
+  // A static host cannot rewrite responses, so the tags have to be written into
+  // the uploaded files. Both paths must run the same module, or the two will
+  // disagree about what a tag means.
+  const workflow = fs.readFileSync(new URL('../.github/workflows/pages.yml', import.meta.url), 'utf8');
+  assert.match(workflow, /python3 scripts\/cache_tag\.py _site/);
+  const server = fs.readFileSync(new URL('../scripts/nocache-server.py', import.meta.url), 'utf8');
+  assert.match(server, /from cache_tag import rewrite/);
 });

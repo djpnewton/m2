@@ -21,19 +21,46 @@ ES modules need to be served over HTTP (opening `index.html` from the filesystem
 
 ```bash
 cd m2
-npm start            # python3 -m http.server 8080
-# then open http://localhost:8080
+./scripts/run.sh      # or `npm start`; then open http://127.0.0.1:8080
 ```
 
-Any static server works. Tests need only Node 22+:
+[scripts/run.sh](scripts/run.sh) is five lines: it runs
+[scripts/nocache-server.py](scripts/nocache-server.py). Port 8080 by default, or whatever you pass:
+
+```bash
+./scripts/run.sh 8138
+PORT=8138 ./scripts/run.sh
+```
+
+Caching is handled by a **cache tag** rather than by response headers. Every module reference carries a
+placeholder — `./model.js?cache-tag=1` — and [scripts/cache_tag.py](scripts/cache_tag.py) replaces the `1`
+with a hash of the file being pointed at:
+
+```js
+import { run, mergeConfig } from './model.js?cache-tag=a7080618adf8';
+```
+
+A URL therefore changes exactly when its own content changes: no stale modules, and no refetching the
+files you did not touch. The tag is a content hash rather than a counter or a clock because two modules
+importing the same third must produce the *same* URL — two URLs would mean two module instances, and two
+copies of the application's state.
+
+The dev server rewrites responses on the way out, so the files on disk keep their `cache-tag=1`
+placeholders. The deploy job runs the same module with a target directory — `python3 scripts/cache_tag.py
+_site` — to bake the hashes into the uploaded files, because a static host has no way to rewrite a
+response. Baking in place changes a file's own hash, so `finalize()` walks the import graph leaves-first:
+a file's imports are finalised, *then* its hash is taken, and only that value is handed to its parents.
+
+`npm start` runs the same script. Any static server works for viewing the page — but without the rewrite
+you are relying on the browser's own caching.
 
 ```bash
 npm test             # node --test tests/*.test.js
 ```
 
-240 tests: 142 cover the model (accounting identities, policy path, fiscal feedback, robustness), 43
-cover the chart helpers, 16 cover the page — control wiring, every figure the KPI breakdowns quote, a
-starting hint for every preset, and the document order — 13 cover the long-run history tables, 12 cover
+238 tests: 142 cover the model (accounting identities, policy path, fiscal feedback, robustness), 43
+cover the chart helpers, 22 cover the page — control wiring, every figure the KPI breakdowns quote, a
+starting hint for every preset, the document order and the cache tags — 13 cover the long-run history tables, 12 cover
 the regional split (keys, labels, identities in both calibrations, no hard-coded wording), and 6 cover
 the glossary. The chart and history tests import their modules
 directly — they touch the DOM only inside their render functions, so the pure maths is testable without
@@ -121,10 +148,10 @@ src/glossary.js     inline definitions for jargon, shown in an accessible popove
 src/history.js      US gold, CPI, M2 and real GDP, 1980–2024, and the index helpers
 src/accounts.js     sector T-account rendering
 src/ui.js           controls, KPIs, chart wiring, narrative text
-src/main.js         bootstrap, and the stale-build banner
-src/build.js        build id, and the mismatch check
-run.sh              start the dev server (idempotent, port as $1 or $PORT)
-scripts/nocache-server.py  dev server: no caching, and it stamps the build id
+src/main.js         bootstrap, and the stale-cache banner
+scripts/run.sh      start the dev server, port as $1 or $PORT
+scripts/cache_tag.py    fills cache-tag placeholders with content hashes
+scripts/nocache-server.py  http.server that applies cache_tag.py per response
 tests/model.test.js  accounting-identity, policy-path and robustness tests
 tests/charts.test.js axis-scale, path-building and tick-label tests
 tests/glossary.test.js every referenced term is defined, and every definition is used

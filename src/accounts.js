@@ -1,5 +1,5 @@
-import { balanceSheets } from './model.js';
-import { termsFor } from './regions.js';
+import { balanceSheets } from './model.js?cache-tag=1';
+import { termsFor } from './regions.js?cache-tag=1';
 
 const fmt = (v) => v.toFixed(1);
 
